@@ -28,4 +28,10 @@ mod tests {
     fn arrow_without_a_selection_selects_the_first_item() {
         assert_eq!(move_selection(None, 5, 1, Arrow::Down), Some(0));
     }
+
+    // 下キーを押すと、1つ下の行が選ばれる。
+    #[test]
+    fn down_selects_the_next_row() {
+        assert_eq!(move_selection(Some(1), 5, 1, Arrow::Down), Some(2));
+    }
 }
