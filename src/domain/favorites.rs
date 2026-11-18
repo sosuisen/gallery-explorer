@@ -25,6 +25,8 @@ impl Favorites {
         self.0.retain(|favorite| favorite != path);
     }
 
+    pub fn reorder(&mut self, order: Vec<PathBuf>) {}
+
     pub fn paths(&self) -> &[PathBuf] {
         &self.0
     }
@@ -66,5 +68,25 @@ mod tests {
         favorites.remove(Path::new(r"C:\a"));
 
         assert_eq!(favorites.paths(), [Path::new(r"C:\b")]);
+    }
+
+    // 並べ替えると、お気に入りは渡した順序になる。
+    #[test]
+    fn reordering_puts_the_favorites_in_the_given_order() {
+        let mut favorites = Favorites::default();
+        favorites.toggle(Path::new(r"C:\a"));
+        favorites.toggle(Path::new(r"C:\b"));
+        favorites.toggle(Path::new(r"C:\c"));
+
+        favorites.reorder(vec![
+            PathBuf::from(r"C:\c"),
+            PathBuf::from(r"C:\a"),
+            PathBuf::from(r"C:\b"),
+        ]);
+
+        assert_eq!(
+            favorites.paths(),
+            [Path::new(r"C:\c"), Path::new(r"C:\a"), Path::new(r"C:\b")]
+        );
     }
 }
