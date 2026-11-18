@@ -3,7 +3,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::domain::{Entry, EntryKind, sort_entries};
+use crate::domain::{Entry, EntryKind, SortOrder, sort_entries};
 
 /// Reads the items of a folder, sorted for display.
 pub fn read_folder(path: &Path) -> io::Result<Vec<Entry>> {
@@ -23,7 +23,7 @@ pub fn read_folder(path: &Path) -> io::Result<Vec<Entry>> {
             kind,
         });
     }
-    sort_entries(&mut entries);
+    sort_entries(&mut entries, SortOrder::NameAscending);
     Ok(entries)
 }
 

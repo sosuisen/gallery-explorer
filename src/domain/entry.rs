@@ -39,8 +39,18 @@ impl Entry {
     }
 }
 
+/// The order of the items in a folder.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SortOrder {
+    #[default]
+    NameAscending,
+    NameDescending,
+    ModifiedAscending,
+    ModifiedDescending,
+}
+
 /// Sorts folders before files. Inside each group, the order ignores letter case.
-pub fn sort_entries(entries: &mut [Entry]) {
+pub fn sort_entries(entries: &mut [Entry], order: SortOrder) {
     entries.sort_by_cached_key(|entry| (!entry.is_folder(), entry.name.to_lowercase()));
 }
 
@@ -88,7 +98,7 @@ mod tests {
             entry("z", EntryKind::Folder),
         ];
 
-        sort_entries(&mut entries);
+        sort_entries(&mut entries, SortOrder::NameAscending);
 
         assert_eq!(names(&entries), ["z", "a.txt"]);
     }
@@ -102,8 +112,23 @@ mod tests {
             entry("A.txt", EntryKind::File),
         ];
 
-        sort_entries(&mut entries);
+        sort_entries(&mut entries, SortOrder::NameAscending);
 
         assert_eq!(names(&entries), ["A.txt", "b.txt", "C.txt"]);
+    }
+
+    // 名前の降順では、名前の逆順に並ぶ。フォルダはファイルより前のままである。
+    #[test]
+    fn name_descending_reverses_names_and_keeps_folders_first() {
+        let mut entries = vec![
+            entry("a.txt", EntryKind::File),
+            entry("B.txt", EntryKind::File),
+            entry("x", EntryKind::Folder),
+            entry("y", EntryKind::Folder),
+        ];
+
+        sort_entries(&mut entries, SortOrder::NameDescending);
+
+        assert_eq!(names(&entries), ["y", "x", "B.txt", "a.txt"]);
     }
 }
