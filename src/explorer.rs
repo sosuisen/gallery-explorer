@@ -247,7 +247,11 @@ impl Explorer {
         self.save_favorites();
     }
 
-    pub fn open_favorite(&mut self, row: usize) {}
+    /// Moves to the favorite in `row` of the list of favorites.
+    pub fn open_favorite(&mut self, row: usize) {
+        let path = self.favorites.paths()[row].clone();
+        self.navigate(&path);
+    }
 
     /// Puts the favorites in the order the user dragged them into, and saves it.
     pub fn reorder_favorites(&mut self, order: Vec<PathBuf>) {
