@@ -247,6 +247,8 @@ impl Explorer {
         self.save_favorites();
     }
 
+    pub fn reorder_favorites(&mut self, order: Vec<PathBuf>) {}
+
     pub fn report_error(&mut self, message: String) {
         self.error = Some(message);
     }
@@ -705,6 +707,23 @@ mod tests {
 
         assert!(explorer.favorites().is_empty());
         assert!(open(&folder).favorites().is_empty());
+    }
+
+    // お気に入りを並べ替えると、その順序が次の起動でも残っている。
+    #[test]
+    fn reordered_favorites_keep_their_order_on_the_next_open() {
+        let folder = sample();
+        let photos = folder.path().join("photos");
+        let mut explorer = open(&folder);
+        explorer.toggle_favorite();
+        explorer.navigate(&photos);
+        explorer.toggle_favorite();
+
+        explorer.reorder_favorites(vec![photos.clone(), folder.path().to_path_buf()]);
+
+        let expected = [photos, folder.path().to_path_buf()];
+        assert_eq!(explorer.favorites(), expected);
+        assert_eq!(open(&folder).favorites(), expected);
     }
 
     // お気に入りのファイルが壊れていると、お気に入りは空で、エラーが示される。
