@@ -38,6 +38,12 @@ mod tests {
         assert_eq!(move_selection(None, 5, 1, Arrow::Down), Some(0));
     }
 
+    // 項目がないときは、矢印キーを押しても何も選ばれない。
+    #[test]
+    fn arrow_selects_nothing_without_items() {
+        assert_eq!(move_selection(None, 0, 1, Arrow::Down), None);
+    }
+
     // 下キーを押すと、1つ下の行が選ばれる。
     #[test]
     fn down_selects_the_next_row() {
