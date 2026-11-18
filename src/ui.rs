@@ -8,7 +8,9 @@ use windows_reactor::*;
 
 use crate::domain::{Entry, TreeRow, crumbs, display_name};
 use crate::explorer::{Explorer, ViewMode};
-use crate::infra::{Changes, FavoritesStore, FolderWatcher, drives, open_with_default_app};
+use crate::infra::{
+    Changes, FavoritesStore, FolderWatcher, drives, folder_covers, open_with_default_app,
+};
 
 const SIDE_WIDTH: f64 = 300.0;
 const TREE_INDENT: f64 = 16.0;
@@ -37,11 +39,15 @@ pub enum Message {
     FolderChanged(PathBuf),
     /// A wait for changes ended without a change.
     WatchEnded,
+    /// The first images of the folders in a folder were found.
+    CoversFound(PathBuf, Vec<(PathBuf, PathBuf)>),
 }
 
 pub struct ExplorerWindow {
     explorer: Explorer,
     watch: Option<Watch>,
+    // The task that looks for the covers of the folders in the current folder.
+    covers_task: Option<ComponentTask>,
 }
 
 /// The watch of the current folder and the background task that waits for its changes.
@@ -65,6 +71,7 @@ impl Component for ExplorerWindow {
         let mut window = Self {
             explorer: Explorer::open(roots, &start, FavoritesStore::in_app_data()),
             watch: None,
+            covers_task: None,
         };
         window.watch_current_folder(context);
         window
@@ -115,7 +122,8 @@ impl ExplorerWindow {
             Message::ToggleViewMode => explorer.toggle_view_mode(),
             Message::FolderChanged(folder) => {
                 // A change of a folder that is no longer shown arrives late and is ignored.
-                if folder == explorer.current() {
+                let is_current = folder == explorer.current();
+                if is_current {
                     explorer.refresh();
                 }
                 if let Some(watch) = self.watch.as_mut().filter(|watch| watch.folder == folder)
@@ -123,9 +131,27 @@ impl ExplorerWindow {
                 {
                     watch.task = Some(wait_for_changes(watcher.changes(), folder, context));
                 }
+                if is_current {
+                    self.load_covers(context);
+                }
             }
             Message::WatchEnded => {}
+            Message::CoversFound(folder, covers) => explorer.set_covers(&folder, covers),
         }
+    }
+
+    /// Looks for the covers of the folders in the current folder on the thread pool, because
+    /// each folder must be read. A search for an earlier folder is cancelled.
+    fn load_covers(&mut self, context: &ComponentContext<Self>) {
+        if let Some(task) = self.covers_task.take() {
+            task.cancel();
+        }
+        let folder = self.explorer.current().to_path_buf();
+        let folders = self.explorer.folders();
+        self.covers_task = Some(context.spawn_background(move |token| {
+            let covers = folder_covers(folders, || token.is_cancelled());
+            Message::CoversFound(folder, covers)
+        }));
     }
 
     /// Watches the current folder when it is not watched yet, and stops watching the old one.
@@ -150,6 +176,7 @@ impl ExplorerWindow {
             watcher,
             task,
         });
+        self.load_covers(context);
     }
 
     fn toolbar(&self, context: &ViewContext<Self>) -> View {
@@ -240,7 +267,10 @@ impl ExplorerWindow {
                 let is_selected = selected == Some(row);
                 let view = match mode {
                     ViewMode::List => file_row(row, entry, is_selected, context),
-                    ViewMode::Grid => file_tile(row, entry, is_selected, context),
+                    ViewMode::Grid => {
+                        let cover = self.explorer.cover(entry);
+                        file_tile(row, entry, cover, is_selected, context)
+                    }
                 };
                 (entry.name.clone(), view)
             });
@@ -356,6 +386,7 @@ fn file_row(
 fn file_tile(
     row: usize,
     entry: &Entry,
+    cover: Option<&Path>,
     selected: bool,
     context: &ViewContext<ExplorerWindow>,
 ) -> View {
@@ -372,7 +403,7 @@ fn file_tile(
         .on_pointer_pressed(press_handler(row, context))
         .content(
             StackPanel::new().spacing(4.0).children((
-                preview(entry),
+                preview(entry, cover),
                 TextBlock::new()
                     .text(entry.name.clone())
                     .text_trimming(TextTrimming::CharacterEllipsis)
@@ -381,12 +412,15 @@ fn file_tile(
         )
 }
 
-/// Shows the image itself for an image file, and a large icon for anything else.
-fn preview(entry: &Entry) -> View {
-    let thumbnail = entry
-        .is_image()
-        .then(|| Image::new().source_file(&entry.path).ok())
-        .flatten();
+/// Shows the image itself for an image file, and the first image for a folder that has one.
+/// Anything else gets a large icon.
+fn preview(entry: &Entry, cover: Option<&Path>) -> View {
+    let source = if entry.is_image() {
+        Some(entry.path.as_path())
+    } else {
+        cover
+    };
+    let thumbnail = source.and_then(|source| Image::new().source_file(source).ok());
     let content: View = match thumbnail {
         Some(image) => image
             .stretch(Stretch::Uniform)
@@ -398,7 +432,24 @@ fn preview(entry: &Entry) -> View {
             SymbolIcon::new().symbol(entry_symbol(entry)),
         ),
     };
-    Grid::new().height(THUMBNAIL_HEIGHT).children((content,))
+    let grid = Grid::new().height(THUMBNAIL_HEIGHT);
+    if entry.is_folder() && cover.is_some() {
+        grid.children((content, folder_badge()))
+    } else {
+        grid.children((content,))
+    }
+}
+
+/// A small folder icon on the cover, so that a folder does not look like an image file.
+fn folder_badge() -> View {
+    Border::new()
+        .background(Brush::Theme(ThemeBrush::SolidBackground))
+        .corner_radius(4.0)
+        .padding(4.0)
+        .margin(4.0)
+        .horizontal_alignment(HorizontalAlignment::Left)
+        .vertical_alignment(VerticalAlignment::Bottom)
+        .content(SymbolIcon::new().symbol(Symbol::Folder))
 }
 
 /// Waits on the thread pool, because the watcher's thread cannot send to the window.
