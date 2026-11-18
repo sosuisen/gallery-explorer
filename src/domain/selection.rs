@@ -1,3 +1,24 @@
+/// A cursor key that moves the selection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Arrow {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+/// Returns the item selected after `arrow` is pressed.
+///
+/// `count` is the number of items, and `columns` is the number of items in one row.
+pub fn move_selection(
+    _selected: Option<usize>,
+    _count: usize,
+    _columns: usize,
+    _arrow: Arrow,
+) -> Option<usize> {
+    Some(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
