@@ -4,7 +4,7 @@ use std::path::Path;
 
 /// Returns the `file:///` URI of an image file for `Image::source`.
 pub fn image_uri(path: &Path) -> String {
-    String::new()
+    format!("file:///{}", path.to_string_lossy().replace('\\', "/"))
 }
 
 #[cfg(test)]
