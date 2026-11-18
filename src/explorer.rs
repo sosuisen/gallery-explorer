@@ -808,6 +808,18 @@ mod tests {
         assert_eq!(explorer.view_mode(), ViewMode::Grid);
     }
 
+    // お気に入りから開くと、ほかの表示順を選んでいても、更新日の降順で並ぶ。
+    #[test]
+    fn opening_a_favorite_sorts_newest_first() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.toggle_favorite();
+
+        explorer.open_favorite(0);
+
+        assert_eq!(explorer.sort_order(), SortOrder::ModifiedDescending);
+    }
+
     // お気に入りを並べ替えると、その順序が次の起動でも残っている。
     #[test]
     fn reordered_favorites_keep_their_order_on_the_next_open() {
