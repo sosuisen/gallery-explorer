@@ -20,7 +20,7 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 
 | モジュール | 役割 | 主な型と関数 |
 |---|---|---|
-| `domain` | ファイルシステムも画面も使わないルール | `Entry`、`SortOrder`、`sort_entries`、`crumbs`、`resolve_crumb`、`display_name`、`Favorites`、`Tree`、`DoubleClick` |
+| `domain` | ファイルシステムも画面も使わないルール | `Entry`、`SortOrder`、`sort_entries`、`crumbs`、`resolve_crumb`、`display_name`、`Favorites`、`Tree`、`DoubleClick`、`Arrow`、`move_selection` |
 | `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`folder_covers`、`collect_thumbnails`、`shell_thumbnail`、`image_uri`、`drives`、`FavoritesStore`、`open_with_default_app`、`show_in_explorer`、`FolderWatcher`、`Changes` |
 | `explorer` | ウィンドウの状態と、ユーザーの操作 | `Explorer`、`ViewMode` |
 | `ui` | 状態をWinUIのコントロールに変える | `ExplorerWindow`、`Message` |
@@ -75,7 +75,35 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 1. 一覧の行の`Border`が、左ボタンの押下のたびに`Message::RowPressed(行, 時刻)`を送る。
 2. `Explorer::press_row`が、押された行を選択にする。選択された行は、灰色の背景と左のアクセント色の線で示す。
 3. `Explorer::press_row`が`DoubleClick`に渡す。同じ行への500ms以内の2回目の押下が、ダブルクリックになる。
-4. フォルダなら`navigate`する。ファイルならパスを返し、`ui`が`open_with_default_app`で開く。
+4. `Explorer::open_selected`で開く。フォルダなら`navigate`する。ファイルならパスを返し、`ui`が`open_with_default_app`で開く。
+
+### キーでの選択と、Enterで開く
+
+`windows-reactor`には、キーのイベントがない。キーボードアクセラレーターはあるが、矢印キーを扱えない。
+そこで、`ui`はWin32のフックでキーを受け取る。
+
+1. `ExplorerWindow::create`が、`hook_keys`でUIのスレッドに`WH_GETMESSAGE`のフックを付ける。
+   フックは、WinUIより先に、スレッドのメッセージキューから取り出されるキーを見る。
+2. 矢印キーとEnterの`WM_KEYDOWN`を、`Message::KeyPressed(Key)`にして送る。
+   送ったキーは`WM_NULL`に変え、WinUIには渡さない。
+   フォーカスのあるボタンがEnterで押されたり、矢印キーでフォーカスが動いたりしないためである。
+3. 矢印キーなら、`Explorer::move_selection`が`domain`の`move_selection`で次の選択を決める。
+   グリッドでは、1行のタイルの数を渡す。`ui`は、`on_window_size`で受け取ったウィンドウの幅から、`grid_columns`で数を求める。
+   一覧では、左右キーを無視し、1行を1項目として扱う。
+4. Enterなら、`Explorer::open_selected`で開く。ダブルクリックと同じ処理である。
+
+選択した項目が見えないときは、見える位置までスクロールする。
+`windows-reactor`は`ScrollViewer`をスクロールできないので、WinUIのキーボードフォーカスを使う。
+WinUIは、キーボードでフォーカスを受けた要素を見える位置までスクロールする。プログラムでフォーカスした要素はスクロールしない。
+
+1. `ui`は、選択した項目に、透明で幅1pxのボタンを2つ重ねる（`with_scroll_buttons`）。
+2. 矢印キーのたびに`key_moves`を増やす。`use_effect`は、新しい画面が出たあとで1つ目のボタンにフォーカスを移す。
+3. フォーカスが移ったら、`press_tab_soon`が50ms後に、キーを受けたウィンドウへTabを送る（`PostMessageW`）。
+   新しいボタンの配置が決まる前にTabを送ると、前に選んでいた項目へスクロールしたためである。
+4. Tabで、キーボードフォーカスが2つ目のボタンに移り、WinUIがその項目をスクロールして見せる。
+
+2つのボタンは同じ項目に置く。送るキーではShiftを押せないので、フォーカスは前にしか進められないためである。
+Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほかのアプリには届かない。
 
 ### 右クリックメニュー
 
@@ -168,7 +196,11 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
   グリッドでは、見えていない画像も読み込まれる。
 - フォルダの監視は直下だけなので、子フォルダの中に画像を足しても、そのフォルダの表紙は変わらない。
   今のフォルダを読み直したときに変わる。
-- 一覧は、キーボードの矢印キーでは選べない。
+- キーのイベントがないので、矢印キーとEnterはWin32のフックで受け取る。
+  このキーは、どのコントロールにフォーカスがあっても、ファイルの一覧とグリッドのものになる。
+  そのため、表示順のメニューやお気に入りの一覧では、矢印キーとEnterが使えない。マウスで選ぶ。
+- 矢印キーで選んだあとは、WinUIがキーボードで操作していると見なす。
+  フォルダを移ると、ツールバーの最初のボタンにフォーカスの枠が出る。
 - `MenuFlyout`がないので、右クリックメニューはWin32の`TrackPopupMenu`で出す。見た目は、WinUIではなく、古いWin32のメニューになる。
   このメニューは、キーボードでは選べない。キーがメニューに届かないためである。外をクリックすると閉じる。
 

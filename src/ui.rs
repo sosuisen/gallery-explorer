@@ -1,13 +1,15 @@
 //! The explorer window: it turns the explorer state into WinUI controls.
 
+use std::cell::{Cell, RefCell};
 use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
+use windows::Win32::Foundation::HWND;
 use windows_reactor::*;
 
-use crate::domain::{Entry, SortOrder, TreeRow, crumbs, display_name};
+use crate::domain::{Arrow, Entry, SortOrder, TreeRow, crumbs, display_name};
 use crate::explorer::{Explorer, ViewMode};
 use crate::infra::{
     Changes, FavoritesStore, FolderWatcher, collect_thumbnails, drives, folder_covers, image_uri,
@@ -23,6 +25,8 @@ const SELECTED_BACKGROUND: Color = Color::argb(0x28, 0x80, 0x80, 0x80);
 // padding. The height also holds the name.
 const TILE_WIDTH: f64 = 136.0;
 const TILE_HEIGHT: f64 = 132.0;
+/// The margin around the list and the grid.
+const ITEMS_MARGIN: f64 = 4.0;
 const GRID_PREVIEW: PreviewSize = PreviewSize {
     width: 120.0,
     height: 90.0,
@@ -71,6 +75,17 @@ pub enum Message {
     CoversFound(PathBuf, Vec<(PathBuf, PathBuf)>),
     /// The shell thumbnails of the files in a folder were made.
     ThumbnailsMade(PathBuf, Vec<(PathBuf, Arc<[u8]>)>),
+    /// A key for the items was pressed.
+    KeyPressed(Key),
+    /// The client area of the window changed. It holds the width.
+    WindowResized(f64),
+}
+
+/// A key that works on the items of the current folder.
+#[derive(Clone, Copy)]
+pub enum Key {
+    Arrow(Arrow),
+    Enter,
 }
 
 pub struct ExplorerWindow {
@@ -80,6 +95,12 @@ pub struct ExplorerWindow {
     covers_task: Option<ComponentTask>,
     // The task that asks the shell for the thumbnails of the files in the current folder.
     thumbnails_task: Option<ComponentTask>,
+    /// The number of tiles in one row of the grid. It follows the width of the window.
+    columns: usize,
+    /// The first hidden button in the selected item. See `with_scroll_buttons`.
+    focus_anchor: ElementRef<Button>,
+    /// Counts the moves of the selection by key. Each new count focuses the selected item.
+    key_moves: u64,
 }
 
 /// The watch of the current folder and the background task that waits for its changes.
@@ -105,8 +126,16 @@ impl Component for ExplorerWindow {
             watch: None,
             covers_task: None,
             thumbnails_task: None,
+            columns: 1,
+            focus_anchor: ElementRef::new(),
+            key_moves: 0,
         };
         window.watch_current_folder(context);
+        if let Err(error) = hook_keys(context.sender()) {
+            window
+                .explorer
+                .report_error(format!("キーで項目を選べません: {error}"));
+        }
         window
     }
 
@@ -121,6 +150,20 @@ impl Component for ExplorerWindow {
             display_name(self.explorer.current())
         ));
         context.window_visuals(WindowVisuals::new().client_size(1100.0, 700.0));
+        context.on_window_size(
+            context.callback(|size: WindowSize| Message::WindowResized(size.width)),
+        );
+        // The effect runs after the new view is published, so the anchor is already in the
+        // newly selected item.
+        let anchor = self.focus_anchor.clone();
+        context.use_effect("scroll-to-selected", self.key_moves, move || {
+            let _ = anchor.request_focus_result(|focused| {
+                if focused == Ok(true) {
+                    press_tab_soon();
+                }
+            });
+            None
+        });
 
         Grid::new()
             .rows([GridLength::Auto, GridLength::STAR, GridLength::Auto])
@@ -143,12 +186,20 @@ impl ExplorerWindow {
             Message::ToggleTree(path) => explorer.toggle_tree(&path),
             Message::OpenTreeFolder(path) => explorer.open_tree_folder(&path),
             Message::RowPressed(row, at) => {
-                if let Some(file) = explorer.press_row(row, at)
-                    && let Err(error) = open_with_default_app(&file)
-                {
-                    explorer.report_error(format!("{}を開けません: {error}", file.display()));
+                if let Some(file) = explorer.press_row(row, at) {
+                    open_file(explorer, &file);
                 }
             }
+            Message::KeyPressed(Key::Arrow(arrow)) => {
+                explorer.move_selection(arrow, self.columns);
+                self.key_moves += 1;
+            }
+            Message::KeyPressed(Key::Enter) => {
+                if let Some(file) = explorer.open_selected() {
+                    open_file(explorer, &file);
+                }
+            }
+            Message::WindowResized(width) => self.columns = grid_columns(width),
             Message::ShowMenu(path, is_folder) => {
                 if popup_menu(&["エクスプローラーで開く"]) == Some(0)
                     && let Err(error) = show_in_explorer(&path, is_folder)
@@ -378,15 +429,20 @@ impl ExplorerWindow {
                     ViewMode::List => file_row(row, entry, source, is_selected, context),
                     ViewMode::Grid => file_tile(row, entry, source, is_selected, context),
                 };
+                let view = if is_selected {
+                    with_scroll_buttons(view, &self.focus_anchor)
+                } else {
+                    view
+                };
                 (entry.name.clone(), view)
             });
         let panel: View = match mode {
-            ViewMode::List => StackPanel::new().margin(4.0).keyed_children(items),
+            ViewMode::List => StackPanel::new().margin(ITEMS_MARGIN).keyed_children(items),
             ViewMode::Grid => VariableSizedWrapGrid::new()
                 .orientation(Orientation::Horizontal)
                 .item_width(TILE_WIDTH)
                 .item_height(TILE_HEIGHT)
-                .margin(4.0)
+                .margin(ITEMS_MARGIN)
                 .keyed_children(items),
         };
 
@@ -480,6 +536,44 @@ fn tree_row(row: &TreeRow, context: &ViewContext<ExplorerWindow>) -> View {
     Border::new()
         .on_pointer_pressed(folder_menu_handler(&row.path, context))
         .content(row_view)
+}
+
+fn open_file(explorer: &mut Explorer, file: &Path) {
+    if let Err(error) = open_with_default_app(file) {
+        explorer.report_error(format!("{}を開けません: {error}", file.display()));
+    }
+}
+
+/// The number of tiles in one row of the grid, for a window whose client area is `width` wide.
+///
+/// The grid gets the width beside the side pane, less its margin on both sides. The scroll bar
+/// lies over the tiles, so it takes no width.
+fn grid_columns(width: f64) -> usize {
+    let room = width - SIDE_WIDTH - ITEMS_MARGIN * 2.0;
+    ((room / TILE_WIDTH).floor() as usize).max(1)
+}
+
+/// Puts two hidden buttons over the left edge of the selected item, so that a key can scroll the
+/// item into view.
+///
+/// windows-reactor 0.100.0 cannot scroll a ScrollViewer. WinUI scrolls an element into view only
+/// when it gets keyboard focus, not when the app focuses it. So the view focuses the first
+/// button, the anchor, and then presses Tab. Tab moves keyboard focus to the second button, and
+/// WinUI scrolls the item into view.
+///
+/// Both buttons are in the same item. A posted key cannot hold Shift, so focus can only move
+/// forward. The buttons are 1px wide and transparent, so they hardly take any clicks from the
+/// item.
+fn with_scroll_buttons(item: View, anchor: &ElementRef<Button>) -> View {
+    Grid::new().children((item, scroll_button().element_ref(anchor), scroll_button()))
+}
+
+fn scroll_button() -> Button {
+    Button::new()
+        .opacity(0.0)
+        .width(1.0)
+        .horizontal_alignment(HorizontalAlignment::Left)
+        .vertical_alignment(VerticalAlignment::Stretch)
 }
 
 fn file_row(
@@ -733,4 +827,110 @@ fn popup_menu(items: &[&str]) -> Option<usize> {
         _ = DestroyMenu(menu);
         (chosen.0 as usize).checked_sub(1)
     }
+}
+
+thread_local! {
+    /// Where the key hook sends the keys. The hook runs on the UI thread, as the window does.
+    static KEY_SENDER: RefCell<Option<LocalSender<Message>>> = const { RefCell::new(None) };
+    /// The window that WinUI reads the keys from. It is the window of the last key.
+    static KEY_WINDOW: Cell<HWND> = const { Cell::new(HWND(std::ptr::null_mut())) };
+}
+
+/// How long the Tab of `with_scroll_buttons` waits. The buttons are new, and WinUI lays them out
+/// only after the view is published. A Tab before that scrolled to the item that was selected
+/// before.
+const TAB_DELAY_MS: u32 = 50;
+
+/// Presses Tab after `TAB_DELAY_MS`.
+fn press_tab_soon() {
+    use windows::Win32::UI::WindowsAndMessaging::SetTimer;
+
+    // A timer without a window calls its procedure on this thread.
+    unsafe { SetTimer(None, 0, TAB_DELAY_MS, Some(tab_timer)) };
+}
+
+unsafe extern "system" fn tab_timer(_window: HWND, _message: u32, timer: usize, _time: u32) {
+    use windows::Win32::UI::WindowsAndMessaging::KillTimer;
+
+    let _ = unsafe { KillTimer(None, timer) };
+    press_tab();
+}
+
+/// Presses Tab in the window, as if on the keyboard. The posted key does not go through the
+/// keyboard, so it cannot reach another app.
+fn press_tab() {
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::Input::KeyboardAndMouse::VK_TAB;
+    use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_KEYDOWN, WM_KEYUP};
+
+    let window = KEY_WINDOW.get();
+    if window.is_invalid() {
+        return;
+    }
+    let key = WPARAM(usize::from(VK_TAB.0));
+    // The lowest bits are the repeat count. The highest two bits mark a key that goes up.
+    let _ = unsafe { PostMessageW(Some(window), WM_KEYDOWN, key, LPARAM(1)) };
+    let _ = unsafe { PostMessageW(Some(window), WM_KEYUP, key, LPARAM(0xC000_0001)) };
+}
+
+/// Sends the cursor keys and Enter to the window as `Message::KeyPressed`.
+///
+/// windows-reactor 0.100.0 has no key events, and its key accelerators do not cover the cursor
+/// keys. A `WH_GETMESSAGE` hook on the UI thread sees each key before WinUI does. The hook stays
+/// until the app ends.
+fn hook_keys(sender: LocalSender<Message>) -> windows::core::Result<()> {
+    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowsHookExW, WH_GETMESSAGE};
+
+    KEY_SENDER.with(|slot| *slot.borrow_mut() = Some(sender));
+    unsafe { SetWindowsHookExW(WH_GETMESSAGE, Some(key_hook), None, GetCurrentThreadId()) }?;
+    Ok(())
+}
+
+unsafe extern "system" fn key_hook(
+    code: i32,
+    wparam: windows::Win32::Foundation::WPARAM,
+    lparam: windows::Win32::Foundation::LPARAM,
+) -> windows::Win32::Foundation::LRESULT {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, HC_ACTION, MSG, PM_REMOVE, WM_KEYDOWN, WM_NULL,
+    };
+
+    // A message that is only peeked at comes again when it is removed.
+    if code == HC_ACTION as i32 && wparam.0 == PM_REMOVE.0 as usize {
+        // SAFETY: for WH_GETMESSAGE, lparam points to the message being taken from the queue.
+        let message = unsafe { &mut *(lparam.0 as *mut MSG) };
+        if message.message == WM_KEYDOWN
+            && let Some(key) = key_of(message.wParam.0)
+        {
+            KEY_WINDOW.set(message.hwnd);
+            let sent = KEY_SENDER.with(|slot| {
+                slot.borrow()
+                    .as_ref()
+                    .is_some_and(|sender| sender.send(Message::KeyPressed(key)))
+            });
+            // WinUI must not act on the key too. A focused button would be pressed by Enter, and
+            // the cursor keys would move the focus away from the items.
+            if sent {
+                message.message = WM_NULL;
+            }
+        }
+    }
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
+}
+
+fn key_of(virtual_key: usize) -> Option<Key> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        VK_DOWN, VK_LEFT, VK_RETURN, VK_RIGHT, VK_UP,
+    };
+
+    let key = u16::try_from(virtual_key).ok()?;
+    Some(match key {
+        _ if key == VK_UP.0 => Key::Arrow(Arrow::Up),
+        _ if key == VK_DOWN.0 => Key::Arrow(Arrow::Down),
+        _ if key == VK_LEFT.0 => Key::Arrow(Arrow::Left),
+        _ if key == VK_RIGHT.0 => Key::Arrow(Arrow::Right),
+        _ if key == VK_RETURN.0 => Key::Enter,
+        _ => return None,
+    })
 }

@@ -6,7 +6,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::domain::{
-    DoubleClick, Entry, Favorites, SortOrder, Tree, TreeRow, resolve_crumb, sort_entries,
+    Arrow, DoubleClick, Entry, Favorites, SortOrder, Tree, TreeRow, move_selection, resolve_crumb,
+    sort_entries,
 };
 use crate::infra::{FavoritesStore, child_folders, read_folder};
 
@@ -237,7 +238,24 @@ impl Explorer {
         if !self.clicks.press(row, at) {
             return None;
         }
-        let entry = self.entries.get(row)?.clone();
+        self.open_selected()
+    }
+
+    /// Moves the selection with a cursor key. columns is the number of tiles in one row of the
+    /// grid.
+    pub fn move_selection(&mut self, arrow: Arrow, columns: usize) {
+        let columns = match self.view_mode {
+            ViewMode::List if matches!(arrow, Arrow::Left | Arrow::Right) => return,
+            ViewMode::List => 1,
+            ViewMode::Grid => columns,
+        };
+        self.selected = move_selection(self.selected, self.entries.len(), columns, arrow);
+    }
+
+    /// Opens the selected item. A folder is shown. For a file, its path is returned, and the
+    /// caller opens it.
+    pub fn open_selected(&mut self) -> Option<PathBuf> {
+        let entry = self.entries.get(self.selected?)?.clone();
         if entry.is_folder() {
             self.navigate(&entry.path);
             None
@@ -632,6 +650,72 @@ mod tests {
         explorer.press_row(1, Instant::now());
 
         assert_eq!(explorer.selected(), Some(1));
+    }
+
+    // 一覧では、グリッドの列の数によらず、下キーで次の行が選ばれる。
+    #[test]
+    fn down_in_the_list_selects_the_next_row() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+
+        explorer.move_selection(Arrow::Down, 4);
+
+        assert_eq!(explorer.selected(), Some(1));
+    }
+
+    // 選ばれたフォルダを開くと、そのフォルダの中身が並ぶ。
+    #[test]
+    fn opening_the_selected_folder_lists_it() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+
+        let opened = explorer.open_selected();
+
+        assert_eq!(opened, None);
+        assert_eq!(explorer.current(), folder.path().join("photos"));
+    }
+
+    // 選ばれたファイルを開くと、そのパスが返り、フォルダは変わらない。
+    #[test]
+    fn opening_the_selected_file_returns_its_path() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.press_row(1, Instant::now());
+
+        let opened = explorer.open_selected();
+
+        assert_eq!(opened, Some(folder.path().join("note.txt")));
+        assert_eq!(explorer.current(), folder.path());
+    }
+
+    // 一覧では、左右キーを押しても、選択は動かない。
+    #[test]
+    fn left_and_right_in_the_list_keep_the_selection() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+
+        explorer.move_selection(Arrow::Right, 1);
+
+        assert_eq!(explorer.selected(), Some(0));
+    }
+
+    // グリッドでは、下キーで、1行の列の数だけ後の項目が選ばれる。
+    #[test]
+    fn down_in_the_grid_selects_the_tile_below() {
+        let folder = tempfile::tempdir().unwrap();
+        for name in ["a.txt", "b.txt", "c.txt", "d.txt"] {
+            fs::write(folder.path().join(name), "").unwrap();
+        }
+        let mut explorer = open(&folder);
+        explorer.toggle_view_mode();
+        explorer.press_row(0, Instant::now());
+
+        explorer.move_selection(Arrow::Down, 2);
+
+        assert_eq!(explorer.selected(), Some(2));
     }
 
     // 起動したときは、一覧で表示される。
