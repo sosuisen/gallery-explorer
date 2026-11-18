@@ -21,7 +21,7 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 | モジュール | 役割 | 主な型と関数 |
 |---|---|---|
 | `domain` | ファイルシステムも画面も使わないルール | `Entry`、`sort_entries`、`crumbs`、`resolve_crumb`、`display_name`、`Favorites`、`Tree`、`DoubleClick` |
-| `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`folder_covers`、`collect_thumbnails`、`shell_thumbnail`、`image_uri`、`drives`、`FavoritesStore`、`open_with_default_app`、`FolderWatcher`、`Changes` |
+| `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`folder_covers`、`collect_thumbnails`、`shell_thumbnail`、`image_uri`、`drives`、`FavoritesStore`、`open_with_default_app`、`show_in_explorer`、`FolderWatcher`、`Changes` |
 | `explorer` | ウィンドウの状態と、ユーザーの操作 | `Explorer`、`ViewMode` |
 | `ui` | 状態をWinUIのコントロールに変える | `ExplorerWindow`、`Message` |
 | `main` | エントリーポイント | `main` |
@@ -36,6 +36,10 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 - フォルダの監視: `notify`クレートを使う。Windowsでは`ReadDirectoryChangesW`で、今のフォルダの直下だけを監視する。
 - ドライブの一覧: `A:\`から`Z:\`のうち、存在するものを並べる。
 - ファイルを開く: `explorer.exe <パス>`を起動する。Windowsが既定のアプリで開く。
+- エクスプローラーで開く: フォルダは、`explorer.exe <パス>`で開く。
+  ファイルは、`ILCreateFromPathW`で項目にし、`SHOpenFolderAndSelectItems`で、選んだ状態で開く。
+  `explorer.exe /select,<パス>`は使わない。Windows 11では、フォルダは開くが、ファイルが選ばれなかったためである。
+- 右クリックメニュー: Win32の`TrackPopupMenu`で出す。
 - サムネイル: `image_uri`で画像ファイルのパスを`file:///`のURIにし、`Image::source`に渡す。読み込みとデコードはWinUIが行う。
   `image_uri`は、日本語などASCII以外の文字をそのまま残し、空白・`#`・`%`などの記号だけをエンコードする。
   `Image::source_file`は使わない。ASCII以外の文字をUTF-8でパーセントエンコードするので、WinUIがファイルを開けないためである。
@@ -72,6 +76,19 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 2. `Explorer::press_row`が、押された行を選択にする。選択された行は、灰色の背景と左のアクセント色の線で示す。
 3. `Explorer::press_row`が`DoubleClick`に渡す。同じ行への500ms以内の2回目の押下が、ダブルクリックになる。
 4. フォルダなら`navigate`する。ファイルならパスを返し、`ui`が`open_with_default_app`で開く。
+
+### 右クリックメニュー
+
+1. 一覧の行とグリッドのタイルの`Border`は、右ボタンの押下で`Message::ShowMenu(パス, フォルダか)`を送る。
+   お気に入りの行とツリーの行も、`folder_menu_handler`で同じメッセージを送る。
+2. `update`が`popup_menu`を呼ぶ。`popup_menu`は、マウスカーソルの位置にWin32のメニューを出し、選ばれた項目の番号を返す。
+   メニューが閉じるまで、`TrackPopupMenu`の中でメッセージループが回る。
+3. 「エクスプローラーで開く」が選ばれると、`show_in_explorer`がエクスプローラーで開く。
+
+ツリーの行は`Button`なので、行全体を透明な背景の`Border`で包み、そこで右ボタンの押下を受け取る。
+`Button`には、押下のイベントがないためである。
+お気に入りの行の名前の`Border`には、透明な背景を付ける。
+背景のない`Border`は、押下を受け取らないためである。
 
 ### お気に入りの並べ替え
 
@@ -140,6 +157,8 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 - フォルダの監視は直下だけなので、子フォルダの中に画像を足しても、そのフォルダの表紙は変わらない。
   今のフォルダを読み直したときに変わる。
 - 一覧は、キーボードの矢印キーでは選べない。
+- `MenuFlyout`がないので、右クリックメニューはWin32の`TrackPopupMenu`で出す。見た目は、WinUIではなく、古いWin32のメニューになる。
+  このメニューは、キーボードでは選べない。キーがメニューに届かないためである。外をクリックすると閉じる。
 
 ## ADRの一覧
 
