@@ -103,15 +103,23 @@ impl Explorer {
     /// Sorts the items again in `order`. The selected item stays selected.
     pub fn set_sort_order(&mut self, order: SortOrder) {
         self.sort_order = order;
+        let mut entries = self.entries.clone();
+        sort_entries(&mut entries, order);
+        self.replace_entries(entries);
+    }
+
+    /// Shows new items in place of the old ones. The selected item stays selected while it is
+    /// still there.
+    fn replace_entries(&mut self, entries: Vec<Entry>) {
         let selected = self
             .selected
             .and_then(|row| self.entries.get(row))
             .map(|entry| entry.path.clone());
-        // The rows move, so a press before the change must not pair with one after it.
+        // The rows may move, so a press before the change must not pair with one after it.
         self.clicks.reset();
-        sort_entries(&mut self.entries, order);
         self.selected =
-            selected.and_then(|path| self.entries.iter().position(|entry| entry.path == path));
+            selected.and_then(|path| entries.iter().position(|entry| entry.path == path));
+        self.entries = entries;
     }
 
     /// The folders in the current folder. Their covers are looked up from these.
@@ -190,18 +198,8 @@ impl Explorer {
     ///
     /// When the folder cannot be read any more, the list becomes empty and the error is kept.
     pub fn refresh(&mut self) {
-        let selected = self
-            .selected
-            .and_then(|row| self.entries.get(row))
-            .map(|entry| entry.path.clone());
-        // The rows may move, so a press before the refresh must not pair with one after it.
-        self.clicks.reset();
         match read_folder(&self.current) {
-            Ok(entries) => {
-                self.selected =
-                    selected.and_then(|path| entries.iter().position(|entry| entry.path == path));
-                self.entries = entries;
-            }
+            Ok(entries) => self.replace_entries(entries),
             Err(error) => {
                 self.entries.clear();
                 self.selected = None;
