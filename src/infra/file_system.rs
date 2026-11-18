@@ -2,8 +2,9 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
 
-use crate::domain::{Entry, EntryKind, sort_entries};
+use crate::domain::{Entry, EntryKind, SortOrder, sort_entries};
 
 /// Reads the items of a folder, sorted for display.
 pub fn read_folder(path: &Path) -> io::Result<Vec<Entry>> {
@@ -21,9 +22,14 @@ pub fn read_folder(path: &Path) -> io::Result<Vec<Entry>> {
             name: item.file_name().to_string_lossy().into_owned(),
             path,
             kind,
+            // One item without a time should not hide the whole folder, so it sorts as the oldest.
+            modified: item
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .unwrap_or(SystemTime::UNIX_EPOCH),
         });
     }
-    sort_entries(&mut entries);
+    sort_entries(&mut entries, SortOrder::NameAscending);
     Ok(entries)
 }
 
@@ -120,6 +126,25 @@ mod tests {
             ]
         );
         assert_eq!(entries[0].path, folder.path().join("sub"));
+    }
+
+    // フォルダを読むと、項目の更新日がわかる。
+    #[test]
+    fn folder_items_are_read_with_their_modified_time() {
+        let folder = tempfile::tempdir().unwrap();
+        let file = folder.path().join("a.txt");
+        fs::write(&file, "").unwrap();
+        let modified = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+        fs::File::options()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+
+        let entries = read_folder(folder.path()).unwrap();
+
+        assert_eq!(entries[0].modified, modified);
     }
 
     // 存在しないフォルダの読み込みは、エラーになる。

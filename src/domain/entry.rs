@@ -1,4 +1,6 @@
+use std::cmp::Reverse;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 /// File extensions of the images that WinUI can show. They are in lowercase.
 const IMAGE_EXTENSIONS: [&str; 10] = [
@@ -18,6 +20,7 @@ pub struct Entry {
     pub name: String,
     pub path: PathBuf,
     pub kind: EntryKind,
+    pub modified: SystemTime,
 }
 
 impl Entry {
@@ -39,20 +42,55 @@ impl Entry {
     }
 }
 
-/// Sorts folders before files. Inside each group, the order ignores letter case.
-pub fn sort_entries(entries: &mut [Entry]) {
-    entries.sort_by_cached_key(|entry| (!entry.is_folder(), entry.name.to_lowercase()));
+/// The order of the items in a folder.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SortOrder {
+    #[default]
+    NameAscending,
+    NameDescending,
+    ModifiedAscending,
+    ModifiedDescending,
+}
+
+/// Sorts folders before files, and each group in the given order.
+/// Names are compared without letter case. Entries with the same modified time are in name order.
+pub fn sort_entries(entries: &mut [Entry], order: SortOrder) {
+    let name = |entry: &Entry| entry.name.to_lowercase();
+    match order {
+        SortOrder::NameAscending => {
+            entries.sort_by_cached_key(|entry| (!entry.is_folder(), name(entry)));
+        }
+        SortOrder::NameDescending => {
+            entries.sort_by_cached_key(|entry| (!entry.is_folder(), Reverse(name(entry))));
+        }
+        SortOrder::ModifiedAscending => {
+            entries.sort_by_cached_key(|entry| (!entry.is_folder(), entry.modified, name(entry)));
+        }
+        SortOrder::ModifiedDescending => {
+            entries.sort_by_cached_key(|entry| {
+                (!entry.is_folder(), Reverse(entry.modified), name(entry))
+            });
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use std::time::Duration;
+
     fn entry(name: &str, kind: EntryKind) -> Entry {
+        modified_entry(name, kind, 0)
+    }
+
+    /// An entry that was modified the given number of seconds after the epoch.
+    fn modified_entry(name: &str, kind: EntryKind, seconds: u64) -> Entry {
         Entry {
             name: name.to_string(),
             path: PathBuf::from(name),
             kind,
+            modified: SystemTime::UNIX_EPOCH + Duration::from_secs(seconds),
         }
     }
 
@@ -88,7 +126,7 @@ mod tests {
             entry("z", EntryKind::Folder),
         ];
 
-        sort_entries(&mut entries);
+        sort_entries(&mut entries, SortOrder::NameAscending);
 
         assert_eq!(names(&entries), ["z", "a.txt"]);
     }
@@ -102,8 +140,69 @@ mod tests {
             entry("A.txt", EntryKind::File),
         ];
 
-        sort_entries(&mut entries);
+        sort_entries(&mut entries, SortOrder::NameAscending);
 
         assert_eq!(names(&entries), ["A.txt", "b.txt", "C.txt"]);
+    }
+
+    // 名前の降順では、名前の逆順に並ぶ。フォルダはファイルより前のままである。
+    #[test]
+    fn name_descending_reverses_names_and_keeps_folders_first() {
+        let mut entries = vec![
+            entry("a.txt", EntryKind::File),
+            entry("B.txt", EntryKind::File),
+            entry("x", EntryKind::Folder),
+            entry("y", EntryKind::Folder),
+        ];
+
+        sort_entries(&mut entries, SortOrder::NameDescending);
+
+        assert_eq!(names(&entries), ["y", "x", "B.txt", "a.txt"]);
+    }
+
+    // 更新日の昇順では、古いものから並ぶ。フォルダはファイルより前のままである。
+    #[test]
+    fn modified_ascending_puts_older_entries_first() {
+        let mut entries = vec![
+            modified_entry("a.txt", EntryKind::File, 30),
+            modified_entry("b.txt", EntryKind::File, 10),
+            modified_entry("x", EntryKind::Folder, 20),
+            modified_entry("y", EntryKind::Folder, 5),
+        ];
+
+        sort_entries(&mut entries, SortOrder::ModifiedAscending);
+
+        assert_eq!(names(&entries), ["y", "x", "b.txt", "a.txt"]);
+    }
+
+    // 更新日の降順では、新しいものから並ぶ。フォルダはファイルより前のままである。
+    #[test]
+    fn modified_descending_puts_newer_entries_first() {
+        let mut entries = vec![
+            modified_entry("a.txt", EntryKind::File, 10),
+            modified_entry("b.txt", EntryKind::File, 30),
+            modified_entry("x", EntryKind::Folder, 5),
+            modified_entry("y", EntryKind::Folder, 20),
+        ];
+
+        sort_entries(&mut entries, SortOrder::ModifiedDescending);
+
+        assert_eq!(names(&entries), ["y", "x", "b.txt", "a.txt"]);
+    }
+
+    // 更新日が同じなら、昇順でも降順でも、名前の昇順に並ぶ。
+    #[test]
+    fn entries_with_the_same_modified_time_are_in_name_order() {
+        let mut entries = vec![
+            modified_entry("b.txt", EntryKind::File, 10),
+            modified_entry("a.txt", EntryKind::File, 10),
+            modified_entry("c.txt", EntryKind::File, 20),
+        ];
+
+        sort_entries(&mut entries, SortOrder::ModifiedAscending);
+        assert_eq!(names(&entries), ["a.txt", "b.txt", "c.txt"]);
+
+        sort_entries(&mut entries, SortOrder::ModifiedDescending);
+        assert_eq!(names(&entries), ["c.txt", "a.txt", "b.txt"]);
     }
 }

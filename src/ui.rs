@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use windows_reactor::*;
 
-use crate::domain::{Entry, TreeRow, crumbs, display_name};
+use crate::domain::{Entry, SortOrder, TreeRow, crumbs, display_name};
 use crate::explorer::{Explorer, ViewMode};
 use crate::infra::{
     Changes, FavoritesStore, FolderWatcher, collect_thumbnails, drives, folder_covers, image_uri,
@@ -29,6 +29,16 @@ const GRID_ICON_HEIGHT: f64 = 48.0;
 // The longest side of a shell thumbnail in pixels. It stays sharp at a display scale of 200%.
 const SHELL_THUMBNAIL_SIZE: u32 = 256;
 
+const SORT_MENU_WIDTH: f64 = 160.0;
+
+/// The rows of the sort menu, in the order they are shown.
+const SORT_ORDERS: [(SortOrder, &str); 4] = [
+    (SortOrder::NameAscending, "名前の昇順"),
+    (SortOrder::NameDescending, "名前の降順"),
+    (SortOrder::ModifiedAscending, "更新日の昇順"),
+    (SortOrder::ModifiedDescending, "更新日の降順"),
+];
+
 #[derive(Clone)]
 pub enum Message {
     Up,
@@ -45,6 +55,8 @@ pub enum Message {
     /// The user dragged a favorite. These are the keys of the favorites in the new order.
     FavoritesReordered(Vec<String>),
     ToggleViewMode,
+    /// An order was chosen in the sort menu. It holds the row of `SORT_ORDERS`.
+    SortChosen(Option<usize>),
     /// The watched folder changed.
     FolderChanged(PathBuf),
     /// A wait for changes ended without a change.
@@ -155,6 +167,8 @@ impl ExplorerWindow {
                 explorer.toggle_view_mode();
                 self.load_thumbnails(context);
             }
+            Message::SortChosen(Some(row)) => explorer.set_sort_order(SORT_ORDERS[row].0),
+            Message::SortChosen(None) => {}
             Message::FolderChanged(folder) => {
                 // A change of a folder that is no longer shown arrives late and is ignored.
                 let is_current = folder == explorer.current();
@@ -258,6 +272,9 @@ impl ExplorerWindow {
         let labels = crumbs(explorer.current())
             .into_iter()
             .map(|crumb| crumb.label);
+        let sort_row = SORT_ORDERS
+            .iter()
+            .position(|(order, _)| *order == explorer.sort_order());
 
         Grid::new()
             .grid_row(0)
@@ -265,6 +282,7 @@ impl ExplorerWindow {
             .margin(8.0)
             .column_spacing(8.0)
             .columns([
+                GridLength::Auto,
                 GridLength::Auto,
                 GridLength::Auto,
                 GridLength::Auto,
@@ -284,8 +302,16 @@ impl ExplorerWindow {
                     .grid_column(2)
                     .on_click(context.message(Message::ToggleViewMode))
                     .content(icon_label(view_icon, view_label)),
-                BreadcrumbBar::new()
+                ComboBox::new()
                     .grid_column(3)
+                    // A fixed width keeps the breadcrumb still when the chosen label changes.
+                    .width(SORT_MENU_WIDTH)
+                    .vertical_alignment(VerticalAlignment::Center)
+                    .items_source(SORT_ORDERS.iter().map(|(_, label)| *label))
+                    .selected_index(sort_row)
+                    .on_selection_changed(context.callback(Message::SortChosen)),
+                BreadcrumbBar::new()
+                    .grid_column(4)
                     .vertical_alignment(VerticalAlignment::Center)
                     .items_source(labels)
                     .on_item_clicked(context.callback(Message::CrumbClicked)),

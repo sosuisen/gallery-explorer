@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::domain::{DoubleClick, Entry, Favorites, Tree, TreeRow, resolve_crumb};
+use crate::domain::{
+    DoubleClick, Entry, Favorites, SortOrder, Tree, TreeRow, resolve_crumb, sort_entries,
+};
 use crate::infra::{FavoritesStore, child_folders, read_folder};
 
 /// How the items of the current folder are shown.
@@ -27,6 +29,7 @@ pub struct Explorer {
     thumbnails: HashMap<PathBuf, Arc<[u8]>>,
     selected: Option<usize>,
     view_mode: ViewMode,
+    sort_order: SortOrder,
     error: Option<String>,
     favorites: Favorites,
     store: FavoritesStore,
@@ -52,6 +55,7 @@ impl Explorer {
             thumbnails: HashMap::new(),
             selected: None,
             view_mode: ViewMode::List,
+            sort_order: SortOrder::default(),
             error: None,
             favorites,
             store,
@@ -90,6 +94,39 @@ impl Explorer {
             ViewMode::List => ViewMode::Grid,
             ViewMode::Grid => ViewMode::List,
         };
+    }
+
+    pub fn sort_order(&self) -> SortOrder {
+        self.sort_order
+    }
+
+    /// Sorts the items again in `order`. The selected item stays selected.
+    pub fn set_sort_order(&mut self, order: SortOrder) {
+        self.sort_order = order;
+        let mut entries = self.entries.clone();
+        sort_entries(&mut entries, order);
+        self.replace_entries(entries);
+    }
+
+    /// Reads a folder, sorted in the chosen order.
+    fn read_sorted(&self, path: &Path) -> std::io::Result<Vec<Entry>> {
+        let mut entries = read_folder(path)?;
+        sort_entries(&mut entries, self.sort_order);
+        Ok(entries)
+    }
+
+    /// Shows new items in place of the old ones. The selected item stays selected while it is
+    /// still there.
+    fn replace_entries(&mut self, entries: Vec<Entry>) {
+        let selected = self
+            .selected
+            .and_then(|row| self.entries.get(row))
+            .map(|entry| entry.path.clone());
+        // The rows may move, so a press before the change must not pair with one after it.
+        self.clicks.reset();
+        self.selected =
+            selected.and_then(|path| entries.iter().position(|entry| entry.path == path));
+        self.entries = entries;
     }
 
     /// The folders in the current folder. Their covers are looked up from these.
@@ -150,7 +187,7 @@ impl Explorer {
 
     /// Shows the items of `path`. On failure, the current folder stays and the error is kept.
     pub fn navigate(&mut self, path: &Path) {
-        match read_folder(path) {
+        match self.read_sorted(path) {
             Ok(entries) => {
                 self.current = path.to_path_buf();
                 self.entries = entries;
@@ -168,18 +205,8 @@ impl Explorer {
     ///
     /// When the folder cannot be read any more, the list becomes empty and the error is kept.
     pub fn refresh(&mut self) {
-        let selected = self
-            .selected
-            .and_then(|row| self.entries.get(row))
-            .map(|entry| entry.path.clone());
-        // The rows may move, so a press before the refresh must not pair with one after it.
-        self.clicks.reset();
-        match read_folder(&self.current) {
-            Ok(entries) => {
-                self.selected =
-                    selected.and_then(|path| entries.iter().position(|entry| entry.path == path));
-                self.entries = entries;
-            }
+        match self.read_sorted(&self.current) {
+            Ok(entries) => self.replace_entries(entries),
             Err(error) => {
                 self.entries.clear();
                 self.selected = None;
@@ -465,6 +492,38 @@ mod tests {
         explorer.refresh();
 
         assert_eq!(names(&explorer), ["photos"]);
+    }
+
+    // 表示順を変えると、今のフォルダの項目が並び直る。選択していた項目は選択されたままである。
+    #[test]
+    fn changing_the_sort_order_sorts_the_items_again_and_keeps_the_selection() {
+        let folder = sample();
+        fs::write(folder.path().join("a.jpg"), "").unwrap();
+        let mut explorer = open(&folder);
+        explorer.press_row(2, Instant::now());
+
+        explorer.set_sort_order(SortOrder::NameDescending);
+
+        assert_eq!(names(&explorer), ["photos", "note.txt", "a.jpg"]);
+        assert_eq!(explorer.selected(), Some(1));
+        assert_eq!(explorer.sort_order(), SortOrder::NameDescending);
+    }
+
+    // フォルダを移っても、表示順は変わらない。読み直しても変わらない。
+    #[test]
+    fn sort_order_stays_after_moving_and_refreshing() {
+        let folder = sample();
+        fs::write(folder.path().join("a.jpg"), "").unwrap();
+        let mut explorer = open(&folder);
+        explorer.set_sort_order(SortOrder::NameDescending);
+
+        explorer.navigate(&folder.path().join("photos"));
+        explorer.go_up();
+        assert_eq!(names(&explorer), ["photos", "note.txt", "a.jpg"]);
+
+        fs::write(folder.path().join("b.jpg"), "").unwrap();
+        explorer.refresh();
+        assert_eq!(names(&explorer), ["photos", "note.txt", "b.jpg", "a.jpg"]);
     }
 
     // 前に項目が増えても、選択していた項目は選択されたままである。
