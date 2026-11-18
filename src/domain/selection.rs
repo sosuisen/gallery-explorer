@@ -21,6 +21,7 @@ pub fn move_selection(
         (Some(row), Arrow::Up) if row >= columns => Some(row - columns),
         (Some(row), Arrow::Up) => Some(row),
         (Some(row), _) if row + columns < count => Some(row + columns),
+        (Some(row), _) if row / columns < (count - 1) / columns => Some(count - 1),
         (Some(row), _) => Some(row),
     }
 }
