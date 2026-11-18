@@ -3,8 +3,17 @@
 use std::path::Path;
 
 /// Returns the arguments of `explorer.exe` that show `path` in File Explorer.
+///
+/// A folder is opened itself. A file is selected in the folder that holds it.
+/// The path is quoted by hand: `/select,` must come before the opening quote, which the
+/// quoting of `Command::arg` cannot do.
 pub fn explorer_args(path: &Path, is_folder: bool) -> String {
-    format!("\"{}\"", path.display())
+    let quoted = format!("\"{}\"", path.display());
+    if is_folder {
+        quoted
+    } else {
+        format!("/select,{quoted}")
+    }
 }
 
 #[cfg(test)]
