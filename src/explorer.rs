@@ -6,11 +6,21 @@ use std::time::Instant;
 use crate::domain::{DoubleClick, Entry, Favorites, Tree, TreeRow, resolve_crumb};
 use crate::infra::{FavoritesStore, child_folders, read_folder};
 
+/// How the items of the current folder are shown.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ViewMode {
+    /// One row per item, with a small icon.
+    List,
+    /// Tiles in rows, with a thumbnail for each image.
+    Grid,
+}
+
 pub struct Explorer {
     roots: Vec<PathBuf>,
     current: PathBuf,
     entries: Vec<Entry>,
     selected: Option<usize>,
+    view_mode: ViewMode,
     error: Option<String>,
     favorites: Favorites,
     store: FavoritesStore,
@@ -33,6 +43,7 @@ impl Explorer {
             current: start.to_path_buf(),
             entries: Vec::new(),
             selected: None,
+            view_mode: ViewMode::List,
             error: None,
             favorites,
             store,
@@ -59,6 +70,18 @@ impl Explorer {
 
     pub fn error(&self) -> Option<&str> {
         self.error.as_deref()
+    }
+
+    pub fn view_mode(&self) -> ViewMode {
+        self.view_mode
+    }
+
+    /// Switches between the list and the grid.
+    pub fn toggle_view_mode(&mut self) {
+        self.view_mode = match self.view_mode {
+            ViewMode::List => ViewMode::Grid,
+            ViewMode::Grid => ViewMode::List,
+        };
     }
 
     pub fn favorites(&self) -> &[PathBuf] {
@@ -249,6 +272,39 @@ mod tests {
         explorer.press_row(1, Instant::now());
 
         assert_eq!(explorer.selected(), Some(1));
+    }
+
+    // 起動したときは、一覧で表示される。
+    #[test]
+    fn items_are_shown_as_a_list_on_open() {
+        let folder = sample();
+
+        assert_eq!(open(&folder).view_mode(), ViewMode::List);
+    }
+
+    // 表示を切り替えると、一覧とグリッドが交互になる。
+    #[test]
+    fn toggling_the_view_alternates_between_list_and_grid() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+
+        explorer.toggle_view_mode();
+        assert_eq!(explorer.view_mode(), ViewMode::Grid);
+
+        explorer.toggle_view_mode();
+        assert_eq!(explorer.view_mode(), ViewMode::List);
+    }
+
+    // フォルダを移っても、表示の方法は変わらない。
+    #[test]
+    fn view_mode_stays_when_the_folder_changes() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.toggle_view_mode();
+
+        explorer.navigate(&folder.path().join("photos"));
+
+        assert_eq!(explorer.view_mode(), ViewMode::Grid);
     }
 
     // 1回押しただけでは、フォルダは変わらない。

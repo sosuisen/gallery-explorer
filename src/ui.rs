@@ -7,13 +7,21 @@ use std::time::Instant;
 use windows_reactor::*;
 
 use crate::domain::{Entry, TreeRow, crumbs, display_name};
-use crate::explorer::Explorer;
+use crate::explorer::{Explorer, ViewMode};
 use crate::infra::{FavoritesStore, drives, open_with_default_app};
 
 const SIDE_WIDTH: f64 = 300.0;
 const TREE_INDENT: f64 = 16.0;
 // A gray with low alpha shows on both the light and the dark theme.
 const SELECTED_BACKGROUND: Color = Color::argb(0x28, 0x80, 0x80, 0x80);
+// The size of one grid cell. It includes the margin around the tile.
+// The width is the thumbnail plus the tile's margin, border and padding. The height also holds
+// the name.
+const TILE_WIDTH: f64 = 136.0;
+const TILE_HEIGHT: f64 = 132.0;
+const THUMBNAIL_WIDTH: f64 = 120.0;
+const THUMBNAIL_HEIGHT: f64 = 90.0;
+const GRID_ICON_HEIGHT: f64 = 48.0;
 
 #[derive(Clone)]
 pub enum Message {
@@ -25,6 +33,7 @@ pub enum Message {
     RowPressed(usize, Instant),
     ToggleFavorite,
     RemoveFavorite(PathBuf),
+    ToggleViewMode,
 }
 
 pub struct ExplorerWindow {
@@ -63,6 +72,7 @@ impl Component for ExplorerWindow {
             }
             Message::ToggleFavorite => explorer.toggle_favorite(),
             Message::RemoveFavorite(path) => explorer.remove_favorite(&path),
+            Message::ToggleViewMode => explorer.toggle_view_mode(),
         }
     }
 
@@ -93,6 +103,11 @@ impl ExplorerWindow {
         } else {
             (Symbol::Favorite, "お気に入りに追加")
         };
+        // The button names the view that it switches to.
+        let (view_icon, view_label) = match explorer.view_mode() {
+            ViewMode::List => (Symbol::ViewAll, "グリッド"),
+            ViewMode::Grid => (Symbol::List, "一覧"),
+        };
         let labels = crumbs(explorer.current())
             .into_iter()
             .map(|crumb| crumb.label);
@@ -102,7 +117,12 @@ impl ExplorerWindow {
             .grid_column_span(2)
             .margin(8.0)
             .column_spacing(8.0)
-            .columns([GridLength::Auto, GridLength::Auto, GridLength::STAR])
+            .columns([
+                GridLength::Auto,
+                GridLength::Auto,
+                GridLength::Auto,
+                GridLength::STAR,
+            ])
             .children((
                 Button::new()
                     .grid_column(0)
@@ -113,8 +133,12 @@ impl ExplorerWindow {
                     .is_enabled(explorer.current().parent().is_some())
                     .on_click(context.message(Message::Up))
                     .content(icon_label(Symbol::Up, "上へ")),
-                BreadcrumbBar::new()
+                Button::new()
                     .grid_column(2)
+                    .on_click(context.message(Message::ToggleViewMode))
+                    .content(icon_label(view_icon, view_label)),
+                BreadcrumbBar::new()
+                    .grid_column(3)
                     .vertical_alignment(VerticalAlignment::Center)
                     .items_source(labels)
                     .on_item_clicked(context.callback(Message::CrumbClicked)),
@@ -147,22 +171,37 @@ impl ExplorerWindow {
     // A StackPanel has no animation, so a folder change shows the new items at once.
     // An ItemsRepeater has no animation either, but windows-reactor puts each of its rows in a
     // left-aligned container, so a row cannot fill the width.
+    // The grid uses a VariableSizedWrapGrid instead of a GridView for the same reason.
     fn file_list(&self, context: &ViewContext<Self>) -> View {
         let selected = self.explorer.selected();
-        let rows = self
+        let mode = self.explorer.view_mode();
+        let items = self
             .explorer
             .entries()
             .iter()
             .enumerate()
             .map(|(row, entry)| {
-                let view = file_row(row, entry, selected == Some(row), context);
+                let is_selected = selected == Some(row);
+                let view = match mode {
+                    ViewMode::List => file_row(row, entry, is_selected, context),
+                    ViewMode::Grid => file_tile(row, entry, is_selected, context),
+                };
                 (entry.name.clone(), view)
             });
+        let panel: View = match mode {
+            ViewMode::List => StackPanel::new().margin(4.0).keyed_children(items),
+            ViewMode::Grid => VariableSizedWrapGrid::new()
+                .orientation(Orientation::Horizontal)
+                .item_width(TILE_WIDTH)
+                .item_height(TILE_HEIGHT)
+                .margin(4.0)
+                .keyed_children(items),
+        };
 
         ScrollViewer::new()
             .grid_row(1)
             .grid_column(1)
-            .content(StackPanel::new().margin(4.0).keyed_children(rows))
+            .content(panel)
     }
 
     fn status_bar(&self) -> View {
@@ -244,26 +283,9 @@ fn file_row(
     selected: bool,
     context: &ViewContext<ExplorerWindow>,
 ) -> View {
-    let symbol = if entry.is_folder() {
-        Symbol::Folder
-    } else {
-        Symbol::Document
-    };
     // The selected row gets a gray background and an accent bar on the left. Every row keeps the
     // bar's width, so the text does not move when the selection changes.
-    let (background, bar) = if selected {
-        (SELECTED_BACKGROUND, Brush::Theme(ThemeBrush::Accent))
-    } else {
-        // A border without a background receives no pointer events.
-        (Color::transparent(), Brush::Solid(Color::transparent()))
-    };
-    // The rows report no double click, so each row reports every left press with its time.
-    let sender = context.sender();
-    let pressed = move |pointer: PointerEventInfo| {
-        if pointer.is_left_button_pressed {
-            sender.send(Message::RowPressed(row, Instant::now()));
-        }
-    };
+    let (background, bar) = selection_brushes(selected);
 
     Border::new()
         .background(background)
@@ -271,6 +293,85 @@ fn file_row(
         .border_thickness(Thickness::new(3.0, 0.0, 0.0, 0.0))
         .corner_radius(4.0)
         .padding(Thickness::new(12.0, 8.0, 12.0, 8.0))
-        .on_pointer_pressed(pressed)
-        .content(icon_label(symbol, entry.name.clone()))
+        .on_pointer_pressed(press_handler(row, context))
+        .content(icon_label(entry_symbol(entry), entry.name.clone()))
+}
+
+fn file_tile(
+    row: usize,
+    entry: &Entry,
+    selected: bool,
+    context: &ViewContext<ExplorerWindow>,
+) -> View {
+    // The selected tile gets a gray background and an accent outline.
+    let (background, outline) = selection_brushes(selected);
+
+    Border::new()
+        .background(background)
+        .border_brush(outline)
+        .border_thickness(2.0)
+        .corner_radius(6.0)
+        .margin(2.0)
+        .padding(4.0)
+        .on_pointer_pressed(press_handler(row, context))
+        .content(
+            StackPanel::new().spacing(4.0).children((
+                preview(entry),
+                TextBlock::new()
+                    .text(entry.name.clone())
+                    .text_trimming(TextTrimming::CharacterEllipsis)
+                    .horizontal_alignment(HorizontalAlignment::Center),
+            )),
+        )
+}
+
+/// Shows the image itself for an image file, and a large icon for anything else.
+fn preview(entry: &Entry) -> View {
+    let thumbnail = entry
+        .is_image()
+        .then(|| Image::new().source_file(&entry.path).ok())
+        .flatten();
+    let content: View = match thumbnail {
+        Some(image) => image
+            .stretch(Stretch::Uniform)
+            .width(THUMBNAIL_WIDTH)
+            .height(THUMBNAIL_HEIGHT)
+            .into(),
+        None => Viewbox::new().height(GRID_ICON_HEIGHT).slot(
+            ViewboxSlot::Child,
+            SymbolIcon::new().symbol(entry_symbol(entry)),
+        ),
+    };
+    Grid::new().height(THUMBNAIL_HEIGHT).children((content,))
+}
+
+fn entry_symbol(entry: &Entry) -> Symbol {
+    if entry.is_folder() {
+        Symbol::Folder
+    } else {
+        Symbol::Document
+    }
+}
+
+/// Returns the background and the border brush of a row or a tile.
+fn selection_brushes(selected: bool) -> (Color, Brush) {
+    if selected {
+        (SELECTED_BACKGROUND, Brush::Theme(ThemeBrush::Accent))
+    } else {
+        // A border without a background receives no pointer events.
+        (Color::transparent(), Brush::Solid(Color::transparent()))
+    }
+}
+
+/// The items report no double click, so each item reports every left press with its time.
+fn press_handler(
+    row: usize,
+    context: &ViewContext<ExplorerWindow>,
+) -> impl Fn(PointerEventInfo) + use<> {
+    let sender = context.sender();
+    move |pointer: PointerEventInfo| {
+        if pointer.is_left_button_pressed {
+            sender.send(Message::RowPressed(row, Instant::now()));
+        }
+    }
 }

@@ -9,9 +9,9 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 
 | 場所 | 内容 |
 |---|---|
-| 上 | 左から、お気に入りの追加と削除のボタン、「上へ」ボタン、パンくず |
+| 上 | 左から、お気に入りの追加と削除のボタン、「上へ」ボタン、一覧とグリッドの切り替えボタン、パンくず |
 | 左 | お気に入りの一覧、フォルダのツリー |
-| 右 | 今のフォルダの中身の一覧 |
+| 右 | 今のフォルダの中身。一覧か、サムネイルのグリッドで示す |
 | 下 | 項目の数、またはエラーの文 |
 
 ## レイヤーとモジュール
@@ -22,7 +22,7 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 |---|---|---|
 | `domain` | ファイルシステムも画面も使わないルール | `Entry`、`sort_entries`、`crumbs`、`resolve_crumb`、`display_name`、`Favorites`、`Tree`、`DoubleClick` |
 | `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`drives`、`FavoritesStore`、`open_with_default_app` |
-| `explorer` | ウィンドウの状態と、ユーザーの操作 | `Explorer` |
+| `explorer` | ウィンドウの状態と、ユーザーの操作 | `Explorer`、`ViewMode` |
 | `ui` | 状態をWinUIのコントロールに変える | `ExplorerWindow`、`Message` |
 | `main` | エントリーポイント | `main` |
 
@@ -34,6 +34,9 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 - フォルダの読み込み: `std::fs::read_dir`を使う。
 - ドライブの一覧: `A:\`から`Z:\`のうち、存在するものを並べる。
 - ファイルを開く: `explorer.exe <パス>`を起動する。Windowsが既定のアプリで開く。
+- サムネイル: `Image::source_file`に画像ファイルのパスを渡す。読み込みとデコードはWinUIが行う。
+  WinUIは表示の大きさでデコードするので、大きな写真が多くてもメモリは増えにくい。
+  4000×3000のJPEG 60枚のフォルダで、130MBだった。
 - お気に入りの保存: `%APPDATA%\GalleryExplorer\favorites.json`に、パスの文字列のJSON配列で保存する。
 - 実行時には、Windows App Runtimeがインストールされている必要がある。
 
@@ -61,12 +64,21 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 3. `Explorer::press_row`が`DoubleClick`に渡す。同じ行への500ms以内の2回目の押下が、ダブルクリックになる。
 4. フォルダなら`navigate`する。ファイルならパスを返し、`ui`が`open_with_default_app`で開く。
 
+### グリッドとサムネイル
+
+1. 切り替えボタンが`Message::ToggleViewMode`を送り、`Explorer::toggle_view_mode`が`ViewMode`を変える。
+2. `ViewMode::Grid`のとき、`ui`は`StackPanel`の代わりに`VariableSizedWrapGrid`にタイルを並べる。
+3. `Entry::is_image`が真のファイルは、タイルに`Image`でサムネイルを出す。それ以外は大きなアイコンを出す。
+4. タイルの選択とダブルクリックは、一覧の行と同じ`Message::RowPressed`で扱う。
+
 ## windows-reactor 0.100.0の制約と、その対応
 
 - `TreeView`は、展開のイベントがなく、クリックではノードの文字しか分からない。そこで、ツリーは字下げしたボタンの行で作る。
 - `BreadcrumbBar`は、クリックされたラベルしか通知しない。同じ名前のフォルダがパスに2つあるときは、深いほうの親へ移る。
 - 一覧は`ListView`ではなく`StackPanel`で作る。理由は[ADR 001](adr/adr-001-stackpanel-for-file-list.md)にある。
-- `StackPanel`は、項目を仮想化しない。項目がとても多いフォルダでは遅くなる。
+- グリッドも、同じ理由で`GridView`ではなく`VariableSizedWrapGrid`で作る。
+- `StackPanel`と`VariableSizedWrapGrid`は、項目を仮想化しない。項目がとても多いフォルダでは遅くなる。
+  グリッドでは、見えていない画像も読み込まれる。
 - 一覧は、キーボードの矢印キーでは選べない。
 
 ## ADRの一覧
