@@ -196,7 +196,7 @@ Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほ
   グリッドでは、見えていない画像も読み込まれる。
 - フォルダの監視は直下だけなので、子フォルダの中に画像を足しても、そのフォルダの表紙は変わらない。
   今のフォルダを読み直したときに変わる。
-- キーのイベントがないので、矢印キーとEnterはWin32のフックで受け取る。
+- キーのイベントがないので、矢印キーとEnterはWin32のフックで受け取る。理由は[ADR 002](adr/adr-002-win32-hook-for-keys.md)にある。
   このキーは、どのコントロールにフォーカスがあっても、ファイルの一覧とグリッドのものになる。
   そのため、表示順のメニューやお気に入りの一覧では、矢印キーとEnterが使えない。マウスで選ぶ。
 - 矢印キーで選んだあとは、WinUIがキーボードで操作していると見なす。
@@ -207,3 +207,4 @@ Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほ
 ## ADRの一覧
 
 - [ADR 001: StackPanel for the File List](adr/adr-001-stackpanel-for-file-list.md)
+- [ADR 002: Win32 Hook for Cursor Keys and Tab for Scrolling](adr/adr-002-win32-hook-for-keys.md)
