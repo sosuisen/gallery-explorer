@@ -657,6 +657,18 @@ mod tests {
         assert_eq!(explorer.selected(), Some(1));
     }
 
+    // 一覧では、左右キーを押しても、選択は動かない。
+    #[test]
+    fn left_and_right_in_the_list_keep_the_selection() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+
+        explorer.move_selection(Arrow::Right, 1);
+
+        assert_eq!(explorer.selected(), Some(0));
+    }
+
     // グリッドでは、下キーで、1行の列の数だけ後の項目が選ばれる。
     #[test]
     fn down_in_the_grid_selects_the_tile_below() {
