@@ -25,7 +25,17 @@ impl Favorites {
         self.0.retain(|favorite| favorite != path);
     }
 
-    pub fn reorder(&mut self, order: Vec<PathBuf>) {}
+    /// Puts the favorites in `order`.
+    ///
+    /// `order` must hold the same folders as the favorites. It comes from the list of
+    /// favorites on the screen, after the user dragged one of them.
+    pub fn reorder(&mut self, order: Vec<PathBuf>) {
+        assert!(
+            order.len() == self.0.len() && order.iter().all(|path| self.contains(path)),
+            "the new order must hold the same folders"
+        );
+        self.0 = order;
+    }
 
     pub fn paths(&self) -> &[PathBuf] {
         &self.0
