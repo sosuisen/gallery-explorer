@@ -9,26 +9,31 @@ pub enum Arrow {
 
 /// Returns the item selected after `arrow` is pressed.
 ///
-/// `count` is the number of items, and `columns` is the number of items in one row.
+/// `count` is the number of items, and `columns` is the number of items in one row. The items
+/// fill the rows from the left, so the last row may be shorter.
+///
+/// # Panics
+///
+/// Panics if `columns` is zero.
 pub fn move_selection(
     selected: Option<usize>,
     count: usize,
     columns: usize,
     arrow: Arrow,
 ) -> Option<usize> {
-    if count == 0 {
-        return None;
-    }
-    match (selected, arrow) {
-        (None, _) => Some(0),
-        (Some(row), Arrow::Up) if row >= columns => Some(row - columns),
-        (Some(row), Arrow::Up) => Some(row),
-        (Some(row), Arrow::Left) => Some(row.saturating_sub(1)),
-        (Some(row), Arrow::Right) => Some((row + 1).min(count - 1)),
-        (Some(row), Arrow::Down) if row + columns < count => Some(row + columns),
-        (Some(row), _) if row / columns < (count - 1) / columns => Some(count - 1),
-        (Some(row), _) => Some(row),
-    }
+    assert!(columns > 0, "a row holds at least one item");
+    let last = count.checked_sub(1)?;
+    let Some(item) = selected else {
+        return Some(0);
+    };
+    let moved = match arrow {
+        Arrow::Up => item.checked_sub(columns).unwrap_or(item),
+        Arrow::Left => item.saturating_sub(1),
+        Arrow::Right => (item + 1).min(last),
+        Arrow::Down if item / columns < last / columns => (item + columns).min(last),
+        Arrow::Down => item,
+    };
+    Some(moved)
 }
 
 #[cfg(test)]
