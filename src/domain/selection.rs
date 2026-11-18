@@ -86,6 +86,12 @@ mod tests {
         assert_eq!(move_selection(Some(9), 10, 4, Arrow::Down), Some(9));
     }
 
+    // グリッドの最後の行では、下キーを押しても、選択は動かない。
+    #[test]
+    fn down_on_the_last_row_of_tiles_keeps_the_selection() {
+        assert_eq!(move_selection(Some(8), 10, 4, Arrow::Down), Some(8));
+    }
+
     // 左右キーを押すと、1つ前と1つ後の項目が選ばれる。行の端では、隣の行へ移る。
     #[test]
     fn left_and_right_select_the_previous_and_next_items() {
