@@ -2,6 +2,7 @@
 
 use std::env;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 
 use windows_reactor::*;
@@ -9,20 +10,23 @@ use windows_reactor::*;
 use crate::domain::{Entry, TreeRow, crumbs, display_name};
 use crate::explorer::{Explorer, ViewMode};
 use crate::infra::{
-    Changes, FavoritesStore, FolderWatcher, drives, folder_covers, open_with_default_app,
+    Changes, FavoritesStore, FolderWatcher, collect_thumbnails, drives, folder_covers,
+    open_with_default_app, shell_thumbnail,
 };
 
 const SIDE_WIDTH: f64 = 300.0;
 const TREE_INDENT: f64 = 16.0;
 // A gray with low alpha shows on both the light and the dark theme.
 const SELECTED_BACKGROUND: Color = Color::argb(0x28, 0x80, 0x80, 0x80);
-// The size of one grid cell. The width is the thumbnail plus the tile's margin, border and padding. The height also holds
-// the name.
+// The size of one grid cell. The width is the thumbnail plus the tile's margin, border and
+// padding. The height also holds the name.
 const TILE_WIDTH: f64 = 136.0;
 const TILE_HEIGHT: f64 = 132.0;
 const THUMBNAIL_WIDTH: f64 = 120.0;
 const THUMBNAIL_HEIGHT: f64 = 90.0;
 const GRID_ICON_HEIGHT: f64 = 48.0;
+// The longest side of a shell thumbnail in pixels. It stays sharp at a display scale of 200%.
+const SHELL_THUMBNAIL_SIZE: u32 = 256;
 
 #[derive(Clone)]
 pub enum Message {
@@ -41,6 +45,8 @@ pub enum Message {
     WatchEnded,
     /// The first images of the folders in a folder were found.
     CoversFound(PathBuf, Vec<(PathBuf, PathBuf)>),
+    /// The shell thumbnails of the files in a folder were made.
+    ThumbnailsMade(PathBuf, Vec<(PathBuf, Arc<[u8]>)>),
 }
 
 pub struct ExplorerWindow {
@@ -48,6 +54,8 @@ pub struct ExplorerWindow {
     watch: Option<Watch>,
     // The task that looks for the covers of the folders in the current folder.
     covers_task: Option<ComponentTask>,
+    // The task that asks the shell for the thumbnails of the files in the current folder.
+    thumbnails_task: Option<ComponentTask>,
 }
 
 /// The watch of the current folder and the background task that waits for its changes.
@@ -72,6 +80,7 @@ impl Component for ExplorerWindow {
             explorer: Explorer::open(roots, &start, FavoritesStore::in_app_data()),
             watch: None,
             covers_task: None,
+            thumbnails_task: None,
         };
         window.watch_current_folder(context);
         window
@@ -119,7 +128,10 @@ impl ExplorerWindow {
             }
             Message::ToggleFavorite => explorer.toggle_favorite(),
             Message::RemoveFavorite(path) => explorer.remove_favorite(&path),
-            Message::ToggleViewMode => explorer.toggle_view_mode(),
+            Message::ToggleViewMode => {
+                explorer.toggle_view_mode();
+                self.load_thumbnails(context);
+            }
             Message::FolderChanged(folder) => {
                 // A change of a folder that is no longer shown arrives late and is ignored.
                 let is_current = folder == explorer.current();
@@ -132,12 +144,41 @@ impl ExplorerWindow {
                     watch.task = Some(wait_for_changes(watcher.changes(), folder, context));
                 }
                 if is_current {
-                    self.load_covers(context);
+                    self.load_previews(context);
                 }
             }
             Message::WatchEnded => {}
             Message::CoversFound(folder, covers) => explorer.set_covers(&folder, covers),
+            Message::ThumbnailsMade(folder, thumbnails) => {
+                explorer.set_thumbnails(&folder, thumbnails)
+            }
         }
+    }
+
+    fn load_previews(&mut self, context: &ComponentContext<Self>) {
+        self.load_covers(context);
+        self.load_thumbnails(context);
+    }
+
+    /// Asks the shell for the thumbnails of the files that are not images, on the thread pool.
+    /// Only the grid shows them, and each one can take a while, so the list does not ask.
+    fn load_thumbnails(&mut self, context: &ComponentContext<Self>) {
+        if let Some(task) = self.thumbnails_task.take() {
+            task.cancel();
+        }
+        if self.explorer.view_mode() != ViewMode::Grid {
+            return;
+        }
+        let folder = self.explorer.current().to_path_buf();
+        let files = self.explorer.non_image_files();
+        self.thumbnails_task = Some(context.spawn_background(move |token| {
+            let thumbnails = collect_thumbnails(
+                files,
+                || token.is_cancelled(),
+                |file| shell_thumbnail(file, SHELL_THUMBNAIL_SIZE),
+            );
+            Message::ThumbnailsMade(folder, thumbnails)
+        }));
     }
 
     /// Looks for the covers of the folders in the current folder on the thread pool, because
@@ -176,7 +217,7 @@ impl ExplorerWindow {
             watcher,
             task,
         });
-        self.load_covers(context);
+        self.load_previews(context);
     }
 
     fn toolbar(&self, context: &ViewContext<Self>) -> View {
@@ -268,8 +309,8 @@ impl ExplorerWindow {
                 let view = match mode {
                     ViewMode::List => file_row(row, entry, is_selected, context),
                     ViewMode::Grid => {
-                        let cover = self.explorer.cover(entry);
-                        file_tile(row, entry, cover, is_selected, context)
+                        let source = thumbnail_source(&self.explorer, entry);
+                        file_tile(row, entry, source, is_selected, context)
                     }
                 };
                 (entry.name.clone(), view)
@@ -386,7 +427,7 @@ fn file_row(
 fn file_tile(
     row: usize,
     entry: &Entry,
-    cover: Option<&Path>,
+    source: Option<ThumbnailSource>,
     selected: bool,
     context: &ViewContext<ExplorerWindow>,
 ) -> View {
@@ -403,7 +444,7 @@ fn file_tile(
         .on_pointer_pressed(press_handler(row, context))
         .content(
             StackPanel::new().spacing(4.0).children((
-                preview(entry, cover),
+                preview(entry, source),
                 TextBlock::new()
                     .text(entry.name.clone())
                     .text_trimming(TextTrimming::CharacterEllipsis)
@@ -412,15 +453,36 @@ fn file_tile(
         )
 }
 
-/// Shows the image itself for an image file, and the first image for a folder that has one.
-/// Anything else gets a large icon.
-fn preview(entry: &Entry, cover: Option<&Path>) -> View {
-    let source = if entry.is_image() {
-        Some(entry.path.as_path())
+/// Where the thumbnail of a tile comes from.
+enum ThumbnailSource {
+    /// An image file that WinUI reads itself.
+    File(PathBuf),
+    /// An image that the shell made, encoded as a BMP file.
+    Encoded(Arc<[u8]>),
+}
+
+/// An image file shows itself, and a folder shows its first image. Any other file shows the
+/// thumbnail that the shell made, when there is one.
+fn thumbnail_source(explorer: &Explorer, entry: &Entry) -> Option<ThumbnailSource> {
+    if entry.is_image() {
+        Some(ThumbnailSource::File(entry.path.clone()))
+    } else if let Some(cover) = explorer.cover(entry) {
+        Some(ThumbnailSource::File(cover.to_path_buf()))
     } else {
-        cover
-    };
-    let thumbnail = source.and_then(|source| Image::new().source_file(source).ok());
+        explorer
+            .thumbnail(entry)
+            .map(|bytes| ThumbnailSource::Encoded(bytes.clone()))
+    }
+}
+
+/// Shows the thumbnail, or a large icon when there is none.
+fn preview(entry: &Entry, source: Option<ThumbnailSource>) -> View {
+    let has_thumbnail = source.is_some();
+    let thumbnail = source.and_then(|source| match source {
+        ThumbnailSource::File(path) => Image::new().source_file(path).ok(),
+        // The same shared bytes on every render let WinUI keep the decoded image.
+        ThumbnailSource::Encoded(bytes) => Some(Image::new().source_data(EncodedImage::new(bytes))),
+    });
     let content: View = match thumbnail {
         Some(image) => image
             .stretch(Stretch::Uniform)
@@ -433,7 +495,7 @@ fn preview(entry: &Entry, cover: Option<&Path>) -> View {
         ),
     };
     let grid = Grid::new().height(THUMBNAIL_HEIGHT);
-    if entry.is_folder() && cover.is_some() {
+    if entry.is_folder() && has_thumbnail {
         grid.children((content, folder_badge()))
     } else {
         grid.children((content,))

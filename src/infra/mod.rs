@@ -1,11 +1,14 @@
 //! Access to the file system and to the favorites file.
 
+mod bitmap;
 mod file_system;
 mod shell;
+mod shell_thumbnail;
 mod store;
 mod watcher;
 
-pub use file_system::{child_folders, drives, folder_covers, read_folder};
+pub use file_system::{child_folders, collect_thumbnails, drives, folder_covers, read_folder};
 pub use shell::open_with_default_app;
+pub use shell_thumbnail::shell_thumbnail;
 pub use store::FavoritesStore;
 pub use watcher::{Changes, FolderWatcher};

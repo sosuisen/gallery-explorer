@@ -15,7 +15,8 @@ A file explorer for Windows with favorites. It is written in Rust with
 - Favorites: add the current folder, remove it, and jump to it. They are kept between runs.
 - A double click opens a folder in the list, or opens a file with its default app.
 - A grid view with thumbnails of image files. A button switches between the list and the grid.
-  A folder shows its first image.
+  A folder shows its first image. Other files, such as `.clip` or videos, show the thumbnail
+  that the Windows shell makes, as File Explorer does.
 - Live updates: files that are added to or removed from the open folder show up at once.
 
 ## Requirements
@@ -57,8 +58,8 @@ cargo install cargo-mutants --locked
 Measure the coverage:
 
 ```
-cargo cov            # a table per file
-cargo cov --html     # a report per line in target/llvm-cov/html/index.html
+cargo coverage            # a table per file
+cargo coverage --html     # a report per line in target/llvm-cov/html/index.html
 ```
 
 Run the mutation tests. One run must stay at 20 mutants or fewer, so run them by file:
@@ -76,3 +77,5 @@ These files are left out of both. No ordinary test can run them.
 - `src/main.rs`: the entry point, which starts the WinUI app.
 - `src/ui.rs`: the window, which builds WinUI controls and handles their events.
 - `src/infra/shell.rs`: the call that opens a file with its default app.
+- `src/infra/shell_thumbnail.rs`: the calls that ask the Windows shell for a thumbnail.
+  The result depends on the thumbnail handlers installed on the machine.
