@@ -17,7 +17,8 @@ A file explorer for Windows with favorites. It is written in Rust with
 - A double click opens a folder in the list, or opens a file with its default app.
 - A grid view with thumbnails of image files. A button switches between the list and the grid.
   A folder shows its first image. Other files, such as `.clip` or videos, show the thumbnail
-  that the Windows shell makes, as File Explorer does.
+  that the Windows shell makes, as File Explorer does. The list shows the same thumbnails at
+  60% of the size.
 - A sort menu: by name or by modified time, each in ascending or descending order. Folders
   always come before files.
 - A right-click menu opens an item in File Explorer. A file is shown selected in its folder.

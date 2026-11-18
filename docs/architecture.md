@@ -135,10 +135,11 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 2. `ViewMode::Grid`のとき、`ui`は`StackPanel`の代わりに`VariableSizedWrapGrid`にタイルを並べる。
 3. `Entry::is_image`が真のファイルは、タイルに`Image`でサムネイルを出す。それ以外は大きなアイコンを出す。
 4. タイルの選択とダブルクリックは、一覧の行と同じ`Message::RowPressed`で扱う。
+5. 一覧の行も、同じ`preview`でサムネイルを出す。大きさは、グリッドの6割（`LIST_PREVIEW`）である。
 
 ### フォルダの表紙
 
-フォルダのタイルには、そのフォルダの直下で名前順に最初の画像を、表紙として出す。
+フォルダのタイルと一覧の行には、そのフォルダの直下で名前順に最初の画像を、表紙として出す。
 
 1. 今のフォルダが変わったときと、読み直したときに、`ExplorerWindow::load_covers`が`spawn_background`でタスクを始める。
    前のタスクは取り消す。
@@ -149,9 +150,9 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 
 ### 画像以外のファイルのサムネイル
 
-1. グリッドのときだけ、`ExplorerWindow::load_thumbnails`が`spawn_background`でタスクを始める。
-   始めるのは、今のフォルダが変わったとき、読み直したとき、グリッドに切り替えたときである。前のタスクは取り消す。
-   一覧ではサムネイルを使わず、1つ作るのにも時間がかかるので、一覧のときは始めない。
+1. `ExplorerWindow::load_thumbnails`が`spawn_background`でタスクを始める。
+   始めるのは、今のフォルダが変わったときと、読み直したときである。前のタスクは取り消す。
+   一覧もグリッドもサムネイルを出すので、表示の方法は問わない。
 2. タスクは、`Explorer::non_image_files`の各ファイルについて、`collect_thumbnails`で`shell_thumbnail`を呼ぶ。
 3. タスクが`Message::ThumbnailsMade(フォルダ, サムネイルの組)`を返す。`Explorer::set_thumbnails`は、今のフォルダの分だけを受け取る。
 4. `ui`は、`Explorer::thumbnail`でBMPのバイト列を引き、`EncodedImage`にして`Image`で出す。
