@@ -13,13 +13,14 @@ pub enum Arrow {
 pub fn move_selection(
     selected: Option<usize>,
     count: usize,
-    _columns: usize,
+    columns: usize,
     arrow: Arrow,
 ) -> Option<usize> {
     match (selected, arrow) {
         (None, _) => Some(0),
-        (Some(row), Arrow::Up) => Some(row.saturating_sub(1)),
-        (Some(row), _) if row + 1 < count => Some(row + 1),
+        (Some(row), Arrow::Up) if row >= columns => Some(row - columns),
+        (Some(row), Arrow::Up) => Some(row),
+        (Some(row), _) if row + columns < count => Some(row + columns),
         (Some(row), _) => Some(row),
     }
 }
