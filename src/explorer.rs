@@ -249,8 +249,12 @@ impl Explorer {
 
     /// Moves the selection with a cursor key. columns is the number of tiles in one row of the
     /// grid.
-    pub fn move_selection(&mut self, arrow: Arrow, _columns: usize) {
-        self.selected = move_selection(self.selected, self.entries.len(), 1, arrow);
+    pub fn move_selection(&mut self, arrow: Arrow, columns: usize) {
+        let columns = match self.view_mode {
+            ViewMode::List => 1,
+            ViewMode::Grid => columns,
+        };
+        self.selected = move_selection(self.selected, self.entries.len(), columns, arrow);
     }
 
     /// Expands a collapsed tree folder, and collapses an expanded one.
