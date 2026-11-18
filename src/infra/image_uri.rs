@@ -3,8 +3,19 @@
 use std::path::Path;
 
 /// Returns the `file:///` URI of an image file for `Image::source`.
+///
+/// Characters outside ASCII stay as they are. WinUI cannot open a file whose name is
+/// percent-encoded as UTF-8, which is what `Image::source_file` does.
 pub fn image_uri(path: &Path) -> String {
-    format!("file:///{}", path.to_string_lossy().replace('\\', "/"))
+    let mut uri = String::from("file:///");
+    for c in path.to_string_lossy().chars() {
+        match c {
+            '\\' => uri.push('/'),
+            c if !c.is_ascii() || c.is_ascii_alphanumeric() || "-._~/:".contains(c) => uri.push(c),
+            c => uri.push_str(&format!("%{:02X}", c as u32)),
+        }
+    }
+    uri
 }
 
 #[cfg(test)]
