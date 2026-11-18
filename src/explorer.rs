@@ -678,6 +678,19 @@ mod tests {
         assert_eq!(explorer.current(), folder.path().join("photos"));
     }
 
+    // 選ばれたファイルを開くと、そのパスが返り、フォルダは変わらない。
+    #[test]
+    fn opening_the_selected_file_returns_its_path() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.press_row(1, Instant::now());
+
+        let opened = explorer.open_selected();
+
+        assert_eq!(opened, Some(folder.path().join("note.txt")));
+        assert_eq!(explorer.current(), folder.path());
+    }
+
     // 一覧では、左右キーを押しても、選択は動かない。
     #[test]
     fn left_and_right_in_the_list_keep_the_selection() {
