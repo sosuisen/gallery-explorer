@@ -16,7 +16,8 @@ A file explorer for Windows with favorites. It is written in Rust with
   them. They are kept between runs.
 - A double click opens a folder in the list, or opens a file with its default app.
 - The cursor keys move the selection. The list uses the up and down keys, and the grid uses all
-  four. Enter opens the selected item, as a double click does.
+  four. Enter opens the selected item, as a double click does. Backspace goes up to the
+  parent folder.
 - A grid view with thumbnails of image files. A button switches between the list and the grid.
   A folder shows its first image. Other files, such as `.clip` or videos, show the thumbnail
   that the Windows shell makes, as File Explorer does. The list shows the same thumbnails at
