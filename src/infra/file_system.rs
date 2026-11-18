@@ -22,7 +22,11 @@ pub fn read_folder(path: &Path) -> io::Result<Vec<Entry>> {
             name: item.file_name().to_string_lossy().into_owned(),
             path,
             kind,
-            modified: SystemTime::UNIX_EPOCH,
+            // One item without a time should not hide the whole folder, so it sorts as the oldest.
+            modified: item
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .unwrap_or(SystemTime::UNIX_EPOCH),
         });
     }
     sort_entries(&mut entries, SortOrder::NameAscending);
