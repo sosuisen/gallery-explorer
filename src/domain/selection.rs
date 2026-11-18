@@ -20,7 +20,9 @@ pub fn move_selection(
         (None, _) => Some(0),
         (Some(row), Arrow::Up) if row >= columns => Some(row - columns),
         (Some(row), Arrow::Up) => Some(row),
-        (Some(row), _) if row + columns < count => Some(row + columns),
+        (Some(row), Arrow::Left) => Some(row.saturating_sub(1)),
+        (Some(row), Arrow::Right) => Some((row + 1).min(count - 1)),
+        (Some(row), Arrow::Down) if row + columns < count => Some(row + columns),
         (Some(row), _) if row / columns < (count - 1) / columns => Some(count - 1),
         (Some(row), _) => Some(row),
     }
