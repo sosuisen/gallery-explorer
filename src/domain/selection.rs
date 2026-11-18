@@ -12,13 +12,14 @@ pub enum Arrow {
 /// `count` is the number of items, and `columns` is the number of items in one row.
 pub fn move_selection(
     selected: Option<usize>,
-    _count: usize,
+    count: usize,
     _columns: usize,
     _arrow: Arrow,
 ) -> Option<usize> {
     match selected {
         None => Some(0),
-        Some(row) => Some(row + 1),
+        Some(row) if row + 1 < count => Some(row + 1),
+        Some(row) => Some(row),
     }
 }
 
