@@ -653,6 +653,22 @@ mod tests {
         assert_eq!(explorer.selected(), Some(1));
     }
 
+    // グリッドでは、下キーで、1行の列の数だけ後の項目が選ばれる。
+    #[test]
+    fn down_in_the_grid_selects_the_tile_below() {
+        let folder = tempfile::tempdir().unwrap();
+        for name in ["a.txt", "b.txt", "c.txt", "d.txt"] {
+            fs::write(folder.path().join(name), "").unwrap();
+        }
+        let mut explorer = open(&folder);
+        explorer.toggle_view_mode();
+        explorer.press_row(0, Instant::now());
+
+        explorer.move_selection(Arrow::Down, 2);
+
+        assert_eq!(explorer.selected(), Some(2));
+    }
+
     // 起動したときは、一覧で表示される。
     #[test]
     fn items_are_shown_as_a_list_on_open() {
