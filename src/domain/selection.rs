@@ -69,4 +69,18 @@ mod tests {
         assert_eq!(move_selection(Some(7), 10, 4, Arrow::Down), Some(9));
         assert_eq!(move_selection(Some(9), 10, 4, Arrow::Down), Some(9));
     }
+
+    // 左右キーを押すと、1つ前と1つ後の項目が選ばれる。行の端では、隣の行へ移る。
+    #[test]
+    fn left_and_right_select_the_previous_and_next_items() {
+        assert_eq!(move_selection(Some(4), 10, 4, Arrow::Left), Some(3));
+        assert_eq!(move_selection(Some(3), 10, 4, Arrow::Right), Some(4));
+    }
+
+    // 最初の項目で左キー、最後の項目で右キーを押しても、選択は動かない。
+    #[test]
+    fn left_and_right_stop_at_the_ends() {
+        assert_eq!(move_selection(Some(0), 10, 4, Arrow::Left), Some(0));
+        assert_eq!(move_selection(Some(9), 10, 4, Arrow::Right), Some(9));
+    }
 }
