@@ -84,13 +84,14 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 
 1. `ExplorerWindow::create`が、`hook_keys`でUIのスレッドに`WH_GETMESSAGE`のフックを付ける。
    フックは、WinUIより先に、スレッドのメッセージキューから取り出されるキーを見る。
-2. 矢印キーとEnterの`WM_KEYDOWN`を、`Message::KeyPressed(Key)`にして送る。
+2. 矢印キー、Enter、Backspaceの`WM_KEYDOWN`を、`Message::KeyPressed(Key)`にして送る。
    送ったキーは`WM_NULL`に変え、WinUIには渡さない。
    フォーカスのあるボタンがEnterで押されたり、矢印キーでフォーカスが動いたりしないためである。
 3. 矢印キーなら、`Explorer::move_selection`が`domain`の`move_selection`で次の選択を決める。
    グリッドでは、1行のタイルの数を渡す。`ui`は、`on_window_size`で受け取ったウィンドウの幅から、`grid_columns`で数を求める。
    一覧では、左右キーを無視し、1行を1項目として扱う。
 4. Enterなら、`Explorer::open_selected`で開く。ダブルクリックと同じ処理である。
+5. Backspaceなら、`Explorer::go_up`で親フォルダへ移る。「上へ」ボタンと同じ処理である。
 
 選択した項目が見えないときは、見える位置までスクロールする。
 `windows-reactor`は`ScrollViewer`をスクロールできないので、WinUIのキーボードフォーカスを使う。
@@ -196,9 +197,10 @@ Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほ
   グリッドでは、見えていない画像も読み込まれる。
 - フォルダの監視は直下だけなので、子フォルダの中に画像を足しても、そのフォルダの表紙は変わらない。
   今のフォルダを読み直したときに変わる。
-- キーのイベントがないので、矢印キーとEnterはWin32のフックで受け取る。
+- キーのイベントがないので、矢印キー、Enter、BackspaceはWin32のフックで受け取る。理由は[ADR 002](adr/adr-002-win32-hook-for-keys.md)にある。
   このキーは、どのコントロールにフォーカスがあっても、ファイルの一覧とグリッドのものになる。
   そのため、表示順のメニューやお気に入りの一覧では、矢印キーとEnterが使えない。マウスで選ぶ。
+  文字の入力欄を足すときは注意する。入力欄でも、Backspaceで文字を消せず、親フォルダへ移ってしまう。
 - 矢印キーで選んだあとは、WinUIがキーボードで操作していると見なす。
   フォルダを移ると、ツールバーの最初のボタンにフォーカスの枠が出る。
 - `MenuFlyout`がないので、右クリックメニューはWin32の`TrackPopupMenu`で出す。見た目は、WinUIではなく、古いWin32のメニューになる。
@@ -207,3 +209,4 @@ Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほ
 ## ADRの一覧
 
 - [ADR 001: StackPanel for the File List](adr/adr-001-stackpanel-for-file-list.md)
+- [ADR 002: Win32 Hook for Cursor Keys and Tab for Scrolling](adr/adr-002-win32-hook-for-keys.md)

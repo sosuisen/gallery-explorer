@@ -86,6 +86,8 @@ pub enum Message {
 pub enum Key {
     Arrow(Arrow),
     Enter,
+    /// Backspace, which goes up to the parent folder.
+    Back,
 }
 
 pub struct ExplorerWindow {
@@ -181,7 +183,7 @@ impl ExplorerWindow {
     fn handle(&mut self, message: Message, context: &ComponentContext<Self>) {
         let explorer = &mut self.explorer;
         match message {
-            Message::Up => explorer.go_up(),
+            Message::Up | Message::KeyPressed(Key::Back) => explorer.go_up(),
             Message::CrumbClicked(label) => explorer.crumb_clicked(&label),
             Message::ToggleTree(path) => explorer.toggle_tree(&path),
             Message::OpenTreeFolder(path) => explorer.open_tree_folder(&path),
@@ -921,7 +923,7 @@ unsafe extern "system" fn key_hook(
 
 fn key_of(virtual_key: usize) -> Option<Key> {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        VK_DOWN, VK_LEFT, VK_RETURN, VK_RIGHT, VK_UP,
+        VK_BACK, VK_DOWN, VK_LEFT, VK_RETURN, VK_RIGHT, VK_UP,
     };
 
     let key = u16::try_from(virtual_key).ok()?;
@@ -931,6 +933,7 @@ fn key_of(virtual_key: usize) -> Option<Key> {
         _ if key == VK_LEFT.0 => Key::Arrow(Arrow::Left),
         _ if key == VK_RIGHT.0 => Key::Arrow(Arrow::Right),
         _ if key == VK_RETURN.0 => Key::Enter,
+        _ if key == VK_BACK.0 => Key::Back,
         _ => return None,
     })
 }
