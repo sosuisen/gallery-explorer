@@ -21,7 +21,7 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 | モジュール | 役割 | 主な型と関数 |
 |---|---|---|
 | `domain` | ファイルシステムも画面も使わないルール | `Entry`、`sort_entries`、`crumbs`、`resolve_crumb`、`display_name`、`Favorites`、`Tree`、`DoubleClick` |
-| `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`folder_covers`、`collect_thumbnails`、`shell_thumbnail`、`drives`、`FavoritesStore`、`open_with_default_app`、`FolderWatcher`、`Changes` |
+| `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`folder_covers`、`collect_thumbnails`、`shell_thumbnail`、`image_uri`、`drives`、`FavoritesStore`、`open_with_default_app`、`FolderWatcher`、`Changes` |
 | `explorer` | ウィンドウの状態と、ユーザーの操作 | `Explorer`、`ViewMode` |
 | `ui` | 状態をWinUIのコントロールに変える | `ExplorerWindow`、`Message` |
 | `main` | エントリーポイント | `main` |
@@ -36,7 +36,9 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 - フォルダの監視: `notify`クレートを使う。Windowsでは`ReadDirectoryChangesW`で、今のフォルダの直下だけを監視する。
 - ドライブの一覧: `A:\`から`Z:\`のうち、存在するものを並べる。
 - ファイルを開く: `explorer.exe <パス>`を起動する。Windowsが既定のアプリで開く。
-- サムネイル: `Image::source_file`に画像ファイルのパスを渡す。読み込みとデコードはWinUIが行う。
+- サムネイル: `image_uri`で画像ファイルのパスを`file:///`のURIにし、`Image::source`に渡す。読み込みとデコードはWinUIが行う。
+  `image_uri`は、日本語などASCII以外の文字をそのまま残し、空白・`#`・`%`などの記号だけをエンコードする。
+  `Image::source_file`は使わない。ASCII以外の文字をUTF-8でパーセントエンコードするので、WinUIがファイルを開けないためである。
   WinUIは表示の大きさでデコードするので、大きな写真が多くてもメモリは増えにくい。
   4000×3000のJPEG 60枚のフォルダで、130MBだった。
 - シェルのサムネイル: 画像ファイル以外は、`windows`クレートで`IShellItemImageFactory::GetImage`を呼ぶ。

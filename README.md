@@ -58,8 +58,8 @@ cargo install cargo-mutants --locked
 Measure the coverage:
 
 ```
-cargo coverage            # a table per file
-cargo coverage --html     # a report per line in target/llvm-cov/html/index.html
+cargo cov            # a table per file
+cargo cov --html     # a report per line in target/llvm-cov/html/index.html
 ```
 
 Run the mutation tests. One run must stay at 20 mutants or fewer, so run them by file:

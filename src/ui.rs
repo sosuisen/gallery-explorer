@@ -10,7 +10,7 @@ use windows_reactor::*;
 use crate::domain::{Entry, TreeRow, crumbs, display_name};
 use crate::explorer::{Explorer, ViewMode};
 use crate::infra::{
-    Changes, FavoritesStore, FolderWatcher, collect_thumbnails, drives, folder_covers,
+    Changes, FavoritesStore, FolderWatcher, collect_thumbnails, drives, folder_covers, image_uri,
     open_with_default_app, shell_thumbnail,
 };
 
@@ -479,7 +479,8 @@ fn thumbnail_source(explorer: &Explorer, entry: &Entry) -> Option<ThumbnailSourc
 fn preview(entry: &Entry, source: Option<ThumbnailSource>) -> View {
     let has_thumbnail = source.is_some();
     let thumbnail = source.and_then(|source| match source {
-        ThumbnailSource::File(path) => Image::new().source_file(path).ok(),
+        // Not `source_file`: `image_uri` says why.
+        ThumbnailSource::File(path) => Image::new().source(image_uri(&path)).ok(),
         // The same shared bytes on every render let WinUI keep the decoded image.
         ThumbnailSource::Encoded(bytes) => Some(Image::new().source_data(EncodedImage::new(bytes))),
     });
