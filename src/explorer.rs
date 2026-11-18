@@ -634,6 +634,18 @@ mod tests {
         assert_eq!(explorer.selected(), Some(1));
     }
 
+    // 一覧では、グリッドの列の数によらず、下キーで次の行が選ばれる。
+    #[test]
+    fn down_in_the_list_selects_the_next_row() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+
+        explorer.move_selection(Arrow::Down, 4);
+
+        assert_eq!(explorer.selected(), Some(1));
+    }
+
     // 起動したときは、一覧で表示される。
     #[test]
     fn items_are_shown_as_a_list_on_open() {
