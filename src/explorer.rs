@@ -658,6 +658,19 @@ mod tests {
         assert_eq!(explorer.selected(), Some(1));
     }
 
+    // 選ばれたフォルダを開くと、そのフォルダの中身が並ぶ。
+    #[test]
+    fn opening_the_selected_folder_lists_it() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+
+        let opened = explorer.open_selected();
+
+        assert_eq!(opened, None);
+        assert_eq!(explorer.current(), folder.path().join("photos"));
+    }
+
     // 一覧では、左右キーを押しても、選択は動かない。
     #[test]
     fn left_and_right_in_the_list_keep_the_selection() {
