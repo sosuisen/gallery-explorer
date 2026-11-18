@@ -11,7 +11,7 @@ use crate::domain::{Entry, TreeRow, crumbs, display_name};
 use crate::explorer::{Explorer, ViewMode};
 use crate::infra::{
     Changes, FavoritesStore, FolderWatcher, collect_thumbnails, drives, folder_covers, image_uri,
-    open_with_default_app, shell_thumbnail,
+    open_with_default_app, shell_thumbnail, show_in_explorer,
 };
 
 const SIDE_WIDTH: f64 = 300.0;
@@ -36,6 +36,8 @@ pub enum Message {
     ToggleTree(PathBuf),
     OpenTreeFolder(PathBuf),
     RowPressed(usize, Instant),
+    /// A right press on an item. It holds the path and whether it is a folder.
+    ShowMenu(PathBuf, bool),
     ToggleFavorite,
     RemoveFavorite(PathBuf),
     /// The selection of the favorites changed. It holds the chosen row.
@@ -127,6 +129,13 @@ impl ExplorerWindow {
                     && let Err(error) = open_with_default_app(&file)
                 {
                     explorer.report_error(format!("{}を開けません: {error}", file.display()));
+                }
+            }
+            Message::ShowMenu(path, is_folder) => {
+                if popup_menu(&["エクスプローラーで開く"]) == Some(0)
+                    && let Err(error) = show_in_explorer(&path, is_folder)
+                {
+                    explorer.report_error(format!("{}を開けません: {error}", path.display()));
                 }
             }
             Message::ToggleFavorite => explorer.toggle_favorite(),
@@ -405,7 +414,10 @@ fn favorite_row(path: &Path, context: &ViewContext<ExplorerWindow>) -> View {
         .children((
             Border::new()
                 .grid_column(0)
-                .vertical_alignment(VerticalAlignment::Center)
+                .vertical_alignment(VerticalAlignment::Stretch)
+                // A border without a background receives no pointer events.
+                .background(Color::transparent())
+                .on_pointer_pressed(folder_menu_handler(path, context))
                 .content(icon_label(Symbol::SolidStar, display_name(path))),
             Button::new()
                 .grid_column(1)
@@ -421,7 +433,8 @@ fn tree_row(row: &TreeRow, context: &ViewContext<ExplorerWindow>) -> View {
 
     // The folder button fills the whole row, so a click anywhere opens the folder.
     // The arrow button lies on top of it, in the place the indent gives it.
-    Grid::new().children((
+    // A button reports no pointer events, so the border around the row takes the right press.
+    let row_view = Grid::new().children((
         Button::new()
             .style(ButtonStyle::Subtle)
             .horizontal_alignment(HorizontalAlignment::Stretch)
@@ -440,7 +453,10 @@ fn tree_row(row: &TreeRow, context: &ViewContext<ExplorerWindow>) -> View {
             .vertical_alignment(VerticalAlignment::Stretch)
             .on_click(context.message(Message::ToggleTree(row.path.clone())))
             .content(TextBlock::new().text(arrow).font_size(10.0)),
-    ))
+    ));
+    Border::new()
+        .on_pointer_pressed(folder_menu_handler(&row.path, context))
+        .content(row_view)
 }
 
 fn file_row(
@@ -459,7 +475,7 @@ fn file_row(
         .border_thickness(Thickness::new(3.0, 0.0, 0.0, 0.0))
         .corner_radius(4.0)
         .padding(Thickness::new(12.0, 8.0, 12.0, 8.0))
-        .on_pointer_pressed(press_handler(row, context))
+        .on_pointer_pressed(press_handler(row, entry, context))
         .content(icon_label(entry_symbol(entry), entry.name.clone()))
 }
 
@@ -480,7 +496,7 @@ fn file_tile(
         .corner_radius(6.0)
         .margin(2.0)
         .padding(4.0)
-        .on_pointer_pressed(press_handler(row, context))
+        .on_pointer_pressed(press_handler(row, entry, context))
         .content(
             StackPanel::new().spacing(4.0).children((
                 preview(entry, source),
@@ -588,14 +604,72 @@ fn selection_brushes(selected: bool) -> (Color, Brush) {
 }
 
 /// The items report no double click, so each item reports every left press with its time.
+/// A right press asks for the context menu of the item.
 fn press_handler(
     row: usize,
+    entry: &Entry,
     context: &ViewContext<ExplorerWindow>,
 ) -> impl Fn(PointerEventInfo) + use<> {
     let sender = context.sender();
+    let path = entry.path.clone();
+    let is_folder = entry.is_folder();
     move |pointer: PointerEventInfo| {
         if pointer.is_left_button_pressed {
             sender.send(Message::RowPressed(row, Instant::now()));
+        } else if pointer.is_right_button_pressed {
+            sender.send(Message::ShowMenu(path.clone(), is_folder));
         }
+    }
+}
+
+/// A right press on a favorite or a tree row asks for the context menu of its folder.
+fn folder_menu_handler(
+    path: &Path,
+    context: &ViewContext<ExplorerWindow>,
+) -> impl Fn(PointerEventInfo) + use<> {
+    let sender = context.sender();
+    let path = path.to_path_buf();
+    move |pointer: PointerEventInfo| {
+        if pointer.is_right_button_pressed {
+            sender.send(Message::ShowMenu(path.clone(), true));
+        }
+    }
+}
+
+/// Shows a menu at the mouse cursor and returns the index of the chosen item.
+///
+/// windows-reactor 0.100.0 has no `MenuFlyout`, so this is a plain Win32 popup menu. It runs
+/// its own message loop until the user chooses an item or closes the menu.
+fn popup_menu(items: &[&str]) -> Option<usize> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        AppendMenuW, CreatePopupMenu, DestroyMenu, GetCursorPos, MF_STRING, SetForegroundWindow,
+        TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
+    };
+    use windows::core::HSTRING;
+
+    unsafe {
+        let menu = CreatePopupMenu().ok()?;
+        // The item ids start at 1, because TrackPopupMenu returns 0 when nothing is chosen.
+        for (index, item) in items.iter().enumerate() {
+            AppendMenuW(menu, MF_STRING, index + 1, &HSTRING::from(*item)).ok()?;
+        }
+        let mut cursor = POINT::default();
+        GetCursorPos(&mut cursor).ok()?;
+        let window = GetActiveWindow();
+        // Without this, the menu does not close when the user clicks outside of it.
+        _ = SetForegroundWindow(window);
+        let chosen = TrackPopupMenu(
+            menu,
+            TPM_RETURNCMD | TPM_RIGHTBUTTON,
+            cursor.x,
+            cursor.y,
+            None,
+            window,
+            None,
+        );
+        _ = DestroyMenu(menu);
+        (chosen.0 as usize).checked_sub(1)
     }
 }
