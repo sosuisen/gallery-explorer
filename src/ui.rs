@@ -106,13 +106,13 @@ impl ExplorerWindow {
             .children((
                 Button::new()
                     .grid_column(0)
+                    .on_click(context.message(Message::ToggleFavorite))
+                    .content(icon_label(star, star_label)),
+                Button::new()
+                    .grid_column(1)
                     .is_enabled(explorer.current().parent().is_some())
                     .on_click(context.message(Message::Up))
                     .content(icon_label(Symbol::Up, "上へ")),
-                Button::new()
-                    .grid_column(1)
-                    .on_click(context.message(Message::ToggleFavorite))
-                    .content(icon_label(star, star_label)),
                 BreadcrumbBar::new()
                     .grid_column(2)
                     .vertical_alignment(VerticalAlignment::Center)
