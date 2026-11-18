@@ -14,12 +14,13 @@ pub fn move_selection(
     selected: Option<usize>,
     count: usize,
     _columns: usize,
-    _arrow: Arrow,
+    arrow: Arrow,
 ) -> Option<usize> {
-    match selected {
-        None => Some(0),
-        Some(row) if row + 1 < count => Some(row + 1),
-        Some(row) => Some(row),
+    match (selected, arrow) {
+        (None, _) => Some(0),
+        (Some(row), Arrow::Up) => Some(row.saturating_sub(1)),
+        (Some(row), _) if row + 1 < count => Some(row + 1),
+        (Some(row), _) => Some(row),
     }
 }
 
