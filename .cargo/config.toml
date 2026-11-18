@@ -2,11 +2,13 @@
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld.exe"
 
-# `cargo coverage` measures the test coverage with cargo-llvm-cov. It prints a table per file.
-# `cargo coverage --html` writes a browsable report to target/llvm-cov/html/.
+# `cargo cov` measures the test coverage with cargo-llvm-cov. It prints a table per file.
+# `cargo cov --html` writes a browsable report to target/llvm-cov/html/.
 #
-# The alias is not named `cov`. With cargo 1.99.1 and cargo-llvm-cov 0.9.1, an alias named
-# `cov` fails with "unrecognized subcommand llvm-cov". The same alias under another name works.
+# The alias is a string, not an array. Worktrees live under .claude/worktrees/ inside the main
+# checkout, so cargo reads this file twice. Cargo joins arrays from both files, and the joined
+# alias fails with "unrecognized subcommand llvm-cov". A string from the nearer file wins.
+# The regex has no spaces, so cargo can split the string on spaces.
 #
 # The numbers are not a target: the report is read for the lines no test reaches, which are
 # either removed or given a test of the behaviour that needs them.
@@ -20,8 +22,4 @@ linker = "rust-lld.exe"
 #   thumbnail. The result depends on the thumbnail handlers installed on the machine.
 # cargo-mutants skips the same files; see .cargo/mutants.toml.
 [alias]
-coverage = [
-    "llvm-cov",
-    "--ignore-filename-regex",
-    "src[/\\\\](main|ui|infra[/\\\\]shell|infra[/\\\\]shell_thumbnail)\\.rs$",
-]
+cov = 'llvm-cov --ignore-filename-regex src[/\\](main|ui|infra[/\\]shell|infra[/\\]shell_thumbnail)\.rs$'
