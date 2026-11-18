@@ -479,8 +479,7 @@ fn thumbnail_source(explorer: &Explorer, entry: &Entry) -> Option<ThumbnailSourc
 fn preview(entry: &Entry, source: Option<ThumbnailSource>) -> View {
     let has_thumbnail = source.is_some();
     let thumbnail = source.and_then(|source| match source {
-        // Not `source_file`: it percent-encodes non-ASCII names as UTF-8, and WinUI then
-        // cannot find the file.
+        // Not `source_file`: `image_uri` says why.
         ThumbnailSource::File(path) => Image::new().source(image_uri(&path)).ok(),
         // The same shared bytes on every render let WinUI keep the decoded image.
         ThumbnailSource::Encoded(bytes) => Some(Image::new().source_data(EncodedImage::new(bytes))),
