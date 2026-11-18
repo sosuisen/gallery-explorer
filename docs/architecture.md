@@ -20,7 +20,7 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 
 | モジュール | 役割 | 主な型と関数 |
 |---|---|---|
-| `domain` | ファイルシステムも画面も使わないルール | `Entry`、`sort_entries`、`crumbs`、`resolve_crumb`、`display_name`、`Favorites`、`Tree`、`DoubleClick` |
+| `domain` | ファイルシステムも画面も使わないルール | `Entry`、`SortOrder`、`sort_entries`、`crumbs`、`resolve_crumb`、`display_name`、`Favorites`、`Tree`、`DoubleClick` |
 | `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`folder_covers`、`collect_thumbnails`、`shell_thumbnail`、`image_uri`、`drives`、`FavoritesStore`、`open_with_default_app`、`show_in_explorer`、`FolderWatcher`、`Changes` |
 | `explorer` | ウィンドウの状態と、ユーザーの操作 | `Explorer`、`ViewMode` |
 | `ui` | 状態をWinUIのコントロールに変える | `ExplorerWindow`、`Message` |
@@ -89,6 +89,16 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 `Button`には、押下のイベントがないためである。
 お気に入りの行の名前の`Border`には、透明な背景を付ける。
 背景のない`Border`は、押下を受け取らないためである。
+
+### 表示順
+
+1. 表示順のメニューは`ComboBox`である。選ぶと`Message::SortChosen(行)`が届く。
+2. `Explorer::set_sort_order`が`SortOrder`を覚え、今の項目を`sort_entries`で並べ直す。選択していた項目は、パスで探し直す。
+3. `Explorer`は、フォルダを読むたびに、覚えた`SortOrder`で並べる。そのため、フォルダを移っても、読み直しても、表示順は変わらない。
+
+`read_folder`自身は、いつも名前の昇順で返す。
+表紙の1枚目の画像とツリーの子フォルダは、表示順に関係なく名前順で決めるためである。
+表示順はファイルに保存しない。アプリを起動するたびに、名前の昇順に戻る。
 
 ### お気に入りの並べ替え
 
