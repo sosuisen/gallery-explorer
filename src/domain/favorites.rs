@@ -25,6 +25,18 @@ impl Favorites {
         self.0.retain(|favorite| favorite != path);
     }
 
+    /// Puts the favorites in `order`.
+    ///
+    /// `order` must hold the same folders as the favorites. It comes from the list of
+    /// favorites on the screen, after the user dragged one of them.
+    pub fn reorder(&mut self, order: Vec<PathBuf>) {
+        assert!(
+            order.len() == self.0.len() && order.iter().all(|path| self.contains(path)),
+            "the new order must hold the same folders"
+        );
+        self.0 = order;
+    }
+
     pub fn paths(&self) -> &[PathBuf] {
         &self.0
     }
@@ -66,5 +78,25 @@ mod tests {
         favorites.remove(Path::new(r"C:\a"));
 
         assert_eq!(favorites.paths(), [Path::new(r"C:\b")]);
+    }
+
+    // 並べ替えると、お気に入りは渡した順序になる。
+    #[test]
+    fn reordering_puts_the_favorites_in_the_given_order() {
+        let mut favorites = Favorites::default();
+        favorites.toggle(Path::new(r"C:\a"));
+        favorites.toggle(Path::new(r"C:\b"));
+        favorites.toggle(Path::new(r"C:\c"));
+
+        favorites.reorder(vec![
+            PathBuf::from(r"C:\c"),
+            PathBuf::from(r"C:\a"),
+            PathBuf::from(r"C:\b"),
+        ]);
+
+        assert_eq!(
+            favorites.paths(),
+            [Path::new(r"C:\c"), Path::new(r"C:\a"), Path::new(r"C:\b")]
+        );
     }
 }

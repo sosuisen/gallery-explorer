@@ -73,6 +73,21 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 3. `Explorer::press_row`が`DoubleClick`に渡す。同じ行への500ms以内の2回目の押下が、ダブルクリックになる。
 4. フォルダなら`navigate`する。ファイルならパスを返し、`ui`が`open_with_default_app`で開く。
 
+### お気に入りの並べ替え
+
+お気に入りは、`ListView`に行ごとの`ListViewItem`を並べて作る。
+ファイルの一覧と違って`ListView`を使うのは、WinUIのドラッグでの並べ替え（`CanReorderItems`）を使うためである。
+項目が変わるときのアニメーションは消せないが、お気に入りはめったに変わらないので問題にならない。
+
+1. 各`ListViewItem`の`tag`に、フォルダのパスの文字列を入れる。
+2. ドラッグが終わると、`ListView`が`on_reordered`で、新しい順序の`tag`を返す。`ui`はこれを`Message::FavoritesReordered`にする。
+3. `Explorer::reorder_favorites`が、`Favorites::reorder`で並べ直し、`FavoritesStore::save`で保存する。
+
+行の名前の部分は、`Button`にしない。`Button`が押下を受け取ると、ドラッグが始まらないためである。
+その代わりに、行を選ぶと`Message::FavoriteChosen(行)`が届き、`Explorer::open_favorite`がそのフォルダへ移る。
+`view`は毎回`selected_index(None)`で選択を消すので、同じ行をもう一度選べる。
+削除のボタンは`Button`のままである。
+
 ### フォルダの変化の反映
 
 1. `ExplorerWindow`は、`update`のたびに今のフォルダを確かめる。変わっていれば、`FolderWatcher::start`で監視を始める。

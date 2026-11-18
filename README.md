@@ -12,7 +12,8 @@ A file explorer for Windows with favorites. It is written in Rust with
 - A folder tree with the drives at the top.
 - A list of the items in the current folder.
 - A breadcrumb bar and an "up" button.
-- Favorites: add the current folder, remove it, and jump to it. They are kept between runs.
+- Favorites: add the current folder, remove it, and jump to it. Drag them up or down to reorder
+  them. They are kept between runs.
 - A double click opens a folder in the list, or opens a file with its default app.
 - A grid view with thumbnails of image files. A button switches between the list and the grid.
   A folder shows its first image. Other files, such as `.clip` or videos, show the thumbnail

@@ -30,7 +30,6 @@ const SHELL_THUMBNAIL_SIZE: u32 = 256;
 
 #[derive(Clone)]
 pub enum Message {
-    Navigate(PathBuf),
     Up,
     CrumbClicked(String),
     ToggleTree(PathBuf),
@@ -38,6 +37,10 @@ pub enum Message {
     RowPressed(usize, Instant),
     ToggleFavorite,
     RemoveFavorite(PathBuf),
+    /// The selection of the favorites changed. It holds the chosen row.
+    FavoriteChosen(Option<usize>),
+    /// The user dragged a favorite. These are the keys of the favorites in the new order.
+    FavoritesReordered(Vec<String>),
     ToggleViewMode,
     /// The watched folder changed.
     FolderChanged(PathBuf),
@@ -114,7 +117,6 @@ impl ExplorerWindow {
     fn handle(&mut self, message: Message, context: &ComponentContext<Self>) {
         let explorer = &mut self.explorer;
         match message {
-            Message::Navigate(path) => explorer.navigate(&path),
             Message::Up => explorer.go_up(),
             Message::CrumbClicked(label) => explorer.crumb_clicked(&label),
             Message::ToggleTree(path) => explorer.toggle_tree(&path),
@@ -128,6 +130,12 @@ impl ExplorerWindow {
             }
             Message::ToggleFavorite => explorer.toggle_favorite(),
             Message::RemoveFavorite(path) => explorer.remove_favorite(&path),
+            // The view clears the selection again, so the same favorite can be chosen twice.
+            Message::FavoriteChosen(Some(row)) => explorer.open_favorite(row),
+            Message::FavoriteChosen(None) => {}
+            Message::FavoritesReordered(keys) => {
+                explorer.reorder_favorites(keys.into_iter().map(PathBuf::from).collect())
+            }
             Message::ToggleViewMode => {
                 explorer.toggle_view_mode();
                 self.load_thumbnails(context);
@@ -274,7 +282,14 @@ impl ExplorerWindow {
             .explorer
             .favorites()
             .iter()
-            .map(|path| (key(path), favorite_row(path, context)));
+            .map(|path| {
+                // ListView reports the new order by the tags of its items.
+                let item = ListViewItem::new()
+                    .tag(key(path))
+                    .content(favorite_row(path, context));
+                KeyedView::new(key(path), item)
+            })
+            .collect::<Vec<_>>();
         let tree = self
             .explorer
             .tree_rows()
@@ -284,7 +299,19 @@ impl ExplorerWindow {
         ScrollViewer::new().grid_row(1).grid_column(0).content(
             StackPanel::new().margin(8.0).spacing(4.0).children((
                 heading("お気に入り"),
-                StackPanel::new().keyed_children(favorites),
+                // Unlike the file list, the favorites use a ListView for its drag to reorder.
+                // Its animation does not matter here, because the favorites rarely change.
+                // A Button in a row would take the press, and the drag would never start.
+                // So a row is chosen by selection, which the view clears every time.
+                ListView::new()
+                    .selection_mode(ListViewSelectionMode::Single)
+                    .selected_index(None)
+                    .on_selection_changed(context.callback(Message::FavoriteChosen))
+                    .can_drag_items(true)
+                    .can_reorder_items(true)
+                    .allow_drop(true)
+                    .on_reordered(context.callback(Message::FavoritesReordered))
+                    .collection_slot(ListViewSlot::Items, favorites),
                 heading("フォルダ"),
                 StackPanel::new().keyed_children(tree),
             )),
@@ -370,12 +397,9 @@ fn favorite_row(path: &Path, context: &ViewContext<ExplorerWindow>) -> View {
     Grid::new()
         .columns([GridLength::STAR, GridLength::Auto])
         .children((
-            Button::new()
+            Border::new()
                 .grid_column(0)
-                .style(ButtonStyle::Subtle)
-                .horizontal_alignment(HorizontalAlignment::Stretch)
-                .horizontal_content_alignment(HorizontalAlignment::Left)
-                .on_click(context.message(Message::Navigate(path.to_path_buf())))
+                .vertical_alignment(VerticalAlignment::Center)
                 .content(icon_label(Symbol::SolidStar, display_name(path))),
             Button::new()
                 .grid_column(1)
