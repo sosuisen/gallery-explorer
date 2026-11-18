@@ -53,12 +53,18 @@ pub enum SortOrder {
 
 /// Sorts folders before files. Inside each group, the order ignores letter case.
 pub fn sort_entries(entries: &mut [Entry], order: SortOrder) {
-    if order == SortOrder::ModifiedAscending {
+    if matches!(
+        order,
+        SortOrder::ModifiedAscending | SortOrder::ModifiedDescending
+    ) {
         entries.sort_by_key(|entry| (!entry.is_folder(), entry.modified));
-        return;
+    } else {
+        entries.sort_by_cached_key(|entry| (!entry.is_folder(), entry.name.to_lowercase()));
     }
-    entries.sort_by_cached_key(|entry| (!entry.is_folder(), entry.name.to_lowercase()));
-    if order == SortOrder::NameDescending {
+    if matches!(
+        order,
+        SortOrder::NameDescending | SortOrder::ModifiedDescending
+    ) {
         let files = entries.partition_point(Entry::is_folder);
         entries[..files].reverse();
         entries[files..].reverse();
