@@ -21,13 +21,13 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 | モジュール | 役割 | 主な型と関数 |
 |---|---|---|
 | `domain` | ファイルシステムも画面も使わないルール | `Entry`、`SortOrder`、`sort_entries`、`crumbs`、`resolve_crumb`、`display_name`、`Favorites`、`Tree`、`DoubleClick`、`Arrow`、`move_selection` |
-| `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`folder_covers`、`collect_thumbnails`、`shell_thumbnail`、`image_uri`、`drives`、`FavoritesStore`、`open_with_default_app`、`show_in_explorer`、`FolderWatcher`、`Changes` |
+| `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`folder_covers`、`collect_thumbnails`、`shell_thumbnail`、`image_uri`、`drives`、`FavoritesStore`、`open_with_default_app`、`show_in_explorer`、`FolderWatcher`、`Changes`、`show_app_icon` |
 | `explorer` | ウィンドウの状態と、ユーザーの操作 | `Explorer`、`ViewMode` |
 | `ui` | 状態をWinUIのコントロールに変える | `ExplorerWindow`、`Message` |
 | `main` | エントリーポイント | `main` |
 
-`ui`と`main`、`infra/shell.rs`、`infra/shell_thumbnail.rs`にはテストがない。
-WinUIのウィンドウ、別のプログラムの起動、Windowsのシェルのサムネイル機能が要るためである。
+`ui`と`main`、`infra/shell.rs`、`infra/shell_thumbnail.rs`、`infra/app_icon.rs`にはテストがない。
+WinUIのウィンドウ、別のプログラムの起動、Windowsのシェルのサムネイル機能、exeに埋め込んだアイコンが要るためである。
 画面に関わる判断は、テストできるように`explorer`と`domain`に置く。
 
 ## 外部とのやり取り
@@ -51,6 +51,12 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
   受け取った`HBITMAP`を`infra/bitmap.rs`の`encode_bmp`でBMPのバイト列にし、`Image::source_data`に渡す。
   1枚は最大256×256pxで、BMPのまま持つので、1枚あたり最大256KBのメモリを使う。
 - お気に入りの保存: `%APPDATA%\GalleryExplorer\favorites.json`に、パスの文字列のJSON配列で保存する。
+- アプリのアイコン: `build.rs`が、`winresource`クレートで`assets/icon.ico`をexeにリソースID 1で埋め込む。
+  エクスプローラーやデスクトップのショートカットは、このアイコンを示す。
+  ウィンドウには、起動後に`infra/app_icon.rs`の`show_app_icon`が`WM_SETICON`で同じアイコンを付ける。タイトルバーとタスクバーは、このアイコンを示す。
+  `windows-reactor`の`WindowVisuals::icon`は、0.100.0では値を受け取るだけで使われない。ウィンドウのハンドルも公開されていない。
+  そのため、UIスレッドのタイトルバーのあるウィンドウを`EnumThreadWindows`で探す。
+  `assets/icon.png`は、`icon.ico`を作り直すときの元の画像で、コードからは使わない。
 - 実行時には、Windows App Runtimeがインストールされている必要がある。
 
 ## 主な処理の流れ
@@ -61,6 +67,7 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 2. `ExplorerWindow::create`が、`drives`でツリーのルートを得る。開始フォルダは`%USERPROFILE%`である。
 3. `Explorer::open`が、`FavoritesStore::load`でお気に入りを読み、`read_folder`で開始フォルダを読む。
 4. `ExplorerWindow::view`が、`Explorer`の状態から画面を作る。
+5. 最初の`view`のあとに1度だけ、効果（`use_effect`）が`show_app_icon`を呼び、ウィンドウにアイコンを付ける。
 
 ### 操作
 

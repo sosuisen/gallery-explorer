@@ -13,7 +13,7 @@ use crate::domain::{Arrow, Entry, SortOrder, TreeRow, crumbs, display_name};
 use crate::explorer::{Explorer, ViewMode};
 use crate::infra::{
     Changes, FavoritesStore, FolderWatcher, collect_thumbnails, drives, folder_covers, image_uri,
-    open_with_default_app, shell_thumbnail, show_in_explorer,
+    open_with_default_app, shell_thumbnail, show_app_icon, show_in_explorer,
 };
 
 const SIDE_WIDTH: f64 = 300.0;
@@ -155,6 +155,11 @@ impl Component for ExplorerWindow {
         context.on_window_size(
             context.callback(|size: WindowSize| Message::WindowResized(size.width)),
         );
+        // The dependency never changes, so this runs once, after the window exists.
+        context.use_effect("app-icon", (), || {
+            show_app_icon();
+            None
+        });
         // The effect runs after the new view is published, so the anchor is already in the
         // newly selected item.
         let anchor = self.focus_anchor.clone();

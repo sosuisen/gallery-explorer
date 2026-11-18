@@ -26,6 +26,7 @@ A file explorer for Windows with favorites. It is written in Rust with
   always come before files.
 - A right-click menu opens an item in File Explorer. A file is shown selected in its folder.
 - Live updates: files that are added to or removed from the open folder show up at once.
+- An app icon in File Explorer, on the taskbar, and in the title bar.
 
 ## Requirements
 
@@ -87,3 +88,4 @@ These files are left out of both. No ordinary test can run them.
 - `src/infra/shell.rs`: the calls that open a file with its default app, and show an item in File Explorer.
 - `src/infra/shell_thumbnail.rs`: the calls that ask the Windows shell for a thumbnail.
   The result depends on the thumbnail handlers installed on the machine.
+- `src/infra/app_icon.rs`: the calls that give the window the icon in the exe.
