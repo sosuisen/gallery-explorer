@@ -248,9 +248,11 @@ impl Explorer {
     }
 
     /// Moves to the favorite in `row` of the list of favorites.
+    /// Favorites hold pictures to look at, so they open in the grid.
     pub fn open_favorite(&mut self, row: usize) {
         let path = self.favorites.paths()[row].clone();
         self.navigate(&path);
+        self.view_mode = ViewMode::Grid;
     }
 
     /// Puts the favorites in the order the user dragged them into, and saves it.
@@ -733,6 +735,18 @@ mod tests {
         explorer.open_favorite(1);
 
         assert_eq!(explorer.current(), photos);
+    }
+
+    // お気に入りから開くと、一覧で見ていてもグリッドで表示される。
+    #[test]
+    fn opening_a_favorite_shows_the_grid() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.toggle_favorite();
+
+        explorer.open_favorite(0);
+
+        assert_eq!(explorer.view_mode(), ViewMode::Grid);
     }
 
     // お気に入りを並べ替えると、その順序が次の起動でも残っている。

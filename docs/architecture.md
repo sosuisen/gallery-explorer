@@ -85,6 +85,9 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 
 行の名前の部分は、`Button`にしない。`Button`が押下を受け取ると、ドラッグが始まらないためである。
 その代わりに、行を選ぶと`Message::FavoriteChosen(行)`が届き、`Explorer::open_favorite`がそのフォルダへ移る。
+`open_favorite`は、表示をグリッドにする。
+そのあと`ui`は、`load_previews`で表紙とサムネイルを読み込み直す。
+お気に入りが今のフォルダと同じだと、フォルダの変化がないので、表紙もサムネイルも自動では読み込まれないためである。
 `view`は毎回`selected_index(None)`で選択を消すので、同じ行をもう一度選べる。
 削除のボタンは`Button`のままである。
 
