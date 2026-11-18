@@ -44,4 +44,11 @@ mod tests {
     fn down_on_the_last_row_keeps_the_selection() {
         assert_eq!(move_selection(Some(4), 5, 1, Arrow::Down), Some(4));
     }
+
+    // 上キーを押すと、1つ上の行が選ばれる。最初の行では、選択は動かない。
+    #[test]
+    fn up_selects_the_previous_row_and_stops_at_the_first() {
+        assert_eq!(move_selection(Some(2), 5, 1, Arrow::Up), Some(1));
+        assert_eq!(move_selection(Some(0), 5, 1, Arrow::Up), Some(0));
+    }
 }
