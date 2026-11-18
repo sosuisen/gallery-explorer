@@ -247,6 +247,8 @@ impl Explorer {
         self.save_favorites();
     }
 
+    pub fn open_favorite(&mut self, row: usize) {}
+
     /// Puts the favorites in the order the user dragged them into, and saves it.
     pub fn reorder_favorites(&mut self, order: Vec<PathBuf>) {
         self.favorites.reorder(order);
@@ -711,6 +713,22 @@ mod tests {
 
         assert!(explorer.favorites().is_empty());
         assert!(open(&folder).favorites().is_empty());
+    }
+
+    // お気に入りの行を選ぶと、その行のフォルダへ移る。
+    #[test]
+    fn choosing_a_favorite_row_moves_to_its_folder() {
+        let folder = sample();
+        let photos = folder.path().join("photos");
+        let mut explorer = open(&folder);
+        explorer.toggle_favorite();
+        explorer.navigate(&photos);
+        explorer.toggle_favorite();
+        explorer.navigate(&photos.join("inner"));
+
+        explorer.open_favorite(1);
+
+        assert_eq!(explorer.current(), photos);
     }
 
     // お気に入りを並べ替えると、その順序が次の起動でも残っている。
