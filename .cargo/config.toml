@@ -1,0 +1,18 @@
+# rust-lld links faster than the default linker. It is part of the Rust toolchain.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"
+
+# `cargo cov` measures the test coverage with cargo-llvm-cov. It prints a table per file;
+# `cargo cov --html` writes a browsable report to target/llvm-cov/html/.
+#
+# The numbers are not a target: the report is read for the lines no test reaches, which are
+# either removed or given a test of the behaviour that needs them.
+#
+# These files are left out of the measurement since 2026-11-18, because no ordinary test can
+# run them: they need a WinUI window or start another program.
+# - src/main.rs: the entry point, which starts the WinUI app
+# - src/ui.rs: the window, which builds WinUI controls and handles their events
+# - src/infra/shell.rs: the call that opens a file with its default app
+# cargo-mutants skips the same files; see .cargo/mutants.toml.
+[alias]
+cov = ["llvm-cov", "--ignore-filename-regex", "src[/\\\\](main|ui|infra[/\\\\]shell)\\.rs$"]

@@ -1,0 +1,6 @@
+# Mutants that loop forever run until the timeout, so the timeout is kept short.
+timeout_multiplier = 2.0
+
+# These files have no tests, because they need a WinUI window or start another program.
+# cargo-llvm-cov skips the same files; see .cargo/config.toml.
+exclude_globs = ["src/main.rs", "src/ui.rs", "src/infra/shell.rs"]

@@ -4,3 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+windows-reactor = "0.100"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+# Less debug information makes the link step faster. A panic still shows the file and line.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
