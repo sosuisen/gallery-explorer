@@ -65,7 +65,10 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 
 - `TreeView`は、展開のイベントがなく、クリックではノードの文字しか分からない。そこで、ツリーは字下げしたボタンの行で作る。
 - `BreadcrumbBar`は、クリックされたラベルしか通知しない。同じ名前のフォルダがパスに2つあるときは、深いほうの親へ移る。
-- `ListView`は、項目が変わるたびにアニメーションする。フォルダを移ると、新しい項目が出るまで350ms以上かかった。このアニメーションを止める設定がないので、一覧には`ListView`を使わない。
-- `ItemsRepeater`はアニメーションしないが、各行を左寄せの入れ物で包む。行が横いっぱいに広がらず、右側の余白を押せないので、使わない。
+- 一覧は`ListView`ではなく`StackPanel`で作る。理由は[ADR 001](adr/adr-001-stackpanel-for-file-list.md)にある。
 - `StackPanel`は、項目を仮想化しない。項目がとても多いフォルダでは遅くなる。
 - 一覧は、キーボードの矢印キーでは選べない。
+
+## ADRの一覧
+
+- [ADR 001: StackPanel for the File List](adr/adr-001-stackpanel-for-file-list.md)
