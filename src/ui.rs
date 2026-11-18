@@ -15,10 +15,13 @@ const TREE_INDENT: f64 = 16.0;
 // A gray with low alpha shows on both the light and the dark theme.
 const SELECTED_BACKGROUND: Color = Color::argb(0x28, 0x80, 0x80, 0x80);
 // The size of one grid cell. It includes the margin around the tile.
-const TILE_SIZE: f64 = 168.0;
-const THUMBNAIL_WIDTH: f64 = 140.0;
-const THUMBNAIL_HEIGHT: f64 = 100.0;
-const GRID_ICON_HEIGHT: f64 = 56.0;
+// The width is the thumbnail plus the tile's margin, border and padding. The height also holds
+// the name.
+const TILE_WIDTH: f64 = 136.0;
+const TILE_HEIGHT: f64 = 132.0;
+const THUMBNAIL_WIDTH: f64 = 120.0;
+const THUMBNAIL_HEIGHT: f64 = 90.0;
+const GRID_ICON_HEIGHT: f64 = 48.0;
 
 #[derive(Clone)]
 pub enum Message {
@@ -189,8 +192,8 @@ impl ExplorerWindow {
             ViewMode::List => StackPanel::new().margin(4.0).keyed_children(items),
             ViewMode::Grid => VariableSizedWrapGrid::new()
                 .orientation(Orientation::Horizontal)
-                .item_width(TILE_SIZE)
-                .item_height(TILE_SIZE)
+                .item_width(TILE_WIDTH)
+                .item_height(TILE_HEIGHT)
                 .margin(4.0)
                 .keyed_children(items),
         };
@@ -308,11 +311,11 @@ fn file_tile(
         .border_brush(outline)
         .border_thickness(2.0)
         .corner_radius(6.0)
-        .margin(4.0)
-        .padding(8.0)
+        .margin(2.0)
+        .padding(4.0)
         .on_pointer_pressed(press_handler(row, context))
         .content(
-            StackPanel::new().spacing(8.0).children((
+            StackPanel::new().spacing(4.0).children((
                 preview(entry),
                 TextBlock::new()
                     .text(entry.name.clone())
