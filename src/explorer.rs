@@ -1,5 +1,6 @@
 //! The state of the explorer window and the operations the user can do on it.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -19,6 +20,8 @@ pub struct Explorer {
     roots: Vec<PathBuf>,
     current: PathBuf,
     entries: Vec<Entry>,
+    /// The first image of each folder in `entries`, by folder path.
+    covers: HashMap<PathBuf, PathBuf>,
     selected: Option<usize>,
     view_mode: ViewMode,
     error: Option<String>,
@@ -42,6 +45,7 @@ impl Explorer {
             roots,
             current: start.to_path_buf(),
             entries: Vec::new(),
+            covers: HashMap::new(),
             selected: None,
             view_mode: ViewMode::List,
             error: None,
@@ -84,6 +88,28 @@ impl Explorer {
         };
     }
 
+    /// The folders in the current folder. Their covers are looked up from these.
+    pub fn folders(&self) -> Vec<PathBuf> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.is_folder())
+            .map(|entry| entry.path.clone())
+            .collect()
+    }
+
+    /// Returns the image shown for a folder: its first image, when one was found.
+    pub fn cover(&self, entry: &Entry) -> Option<&Path> {
+        self.covers.get(&entry.path).map(PathBuf::as_path)
+    }
+
+    /// Sets the covers found for the folders in `folder`.
+    /// Covers of a folder that is no longer shown arrive late and are ignored.
+    pub fn set_covers(&mut self, folder: &Path, covers: Vec<(PathBuf, PathBuf)>) {
+        if folder == self.current {
+            self.covers = covers.into_iter().collect();
+        }
+    }
+
     pub fn favorites(&self) -> &[PathBuf] {
         self.favorites.paths()
     }
@@ -102,6 +128,7 @@ impl Explorer {
             Ok(entries) => {
                 self.current = path.to_path_buf();
                 self.entries = entries;
+                self.covers.clear();
                 self.selected = None;
                 self.clicks.reset();
                 self.error = None;
@@ -248,6 +275,73 @@ mod tests {
         let at = Instant::now();
         assert_eq!(explorer.press_row(row, at), None);
         explorer.press_row(row, at)
+    }
+
+    // フォルダの一覧には、ファイルが含まれない。
+    #[test]
+    fn folders_do_not_include_files() {
+        let folder = sample();
+
+        assert_eq!(open(&folder).folders(), [folder.path().join("photos")]);
+    }
+
+    // 見つかった1枚目の画像が、そのフォルダの表紙になる。
+    #[test]
+    fn found_image_becomes_the_cover_of_its_folder() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        let photos = folder.path().join("photos");
+        let image = photos.join("a.jpg");
+
+        explorer.set_covers(folder.path(), vec![(photos, image.clone())]);
+
+        assert_eq!(
+            explorer.cover(&explorer.entries()[0]),
+            Some(image.as_path())
+        );
+        assert_eq!(explorer.cover(&explorer.entries()[1]), None);
+    }
+
+    // 前のフォルダのために探した表紙は、無視される。
+    #[test]
+    fn covers_for_another_folder_are_ignored() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        let photos = folder.path().join("photos");
+
+        explorer.set_covers(&photos, vec![(photos.clone(), photos.join("a.jpg"))]);
+
+        assert_eq!(explorer.cover(&explorer.entries()[0]), None);
+    }
+
+    // フォルダを移ると、前のフォルダの表紙は消える。
+    #[test]
+    fn covers_are_cleared_when_the_folder_changes() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        let inner = folder.path().join("photos").join("inner");
+        explorer.set_covers(folder.path(), vec![(inner.clone(), inner.join("a.jpg"))]);
+
+        explorer.navigate(&folder.path().join("photos"));
+
+        assert_eq!(explorer.cover(&explorer.entries()[0]), None);
+    }
+
+    // 読み直しても、新しい表紙が届くまでは、前の表紙が残る。
+    #[test]
+    fn covers_stay_through_a_refresh() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        let photos = folder.path().join("photos");
+        let image = photos.join("a.jpg");
+        explorer.set_covers(folder.path(), vec![(photos, image.clone())]);
+
+        explorer.refresh();
+
+        assert_eq!(
+            explorer.cover(&explorer.entries()[0]),
+            Some(image.as_path())
+        );
     }
 
     // 読み直すと、追加されたファイルが一覧に並ぶ。

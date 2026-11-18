@@ -36,6 +36,34 @@ pub fn child_folders(path: &Path) -> io::Result<Vec<PathBuf>> {
         .collect())
 }
 
+/// Returns the first image file directly inside a folder, in display order.
+fn first_image(folder: &Path) -> Option<PathBuf> {
+    read_folder(folder)
+        .ok()?
+        .into_iter()
+        .find(Entry::is_image)
+        .map(|entry| entry.path)
+}
+
+/// Finds the first image of each folder. Folders without an image are left out.
+///
+/// It stops early, with the covers found so far, when `cancelled` returns `true`.
+pub fn folder_covers(
+    folders: impl IntoIterator<Item = PathBuf>,
+    cancelled: impl Fn() -> bool,
+) -> Vec<(PathBuf, PathBuf)> {
+    let mut covers = Vec::new();
+    for folder in folders {
+        if cancelled() {
+            break;
+        }
+        if let Some(image) = first_image(&folder) {
+            covers.push((folder, image));
+        }
+    }
+    covers
+}
+
 /// Lists the drive roots that exist now, from `A:\` to `Z:\`.
 pub fn drives() -> Vec<PathBuf> {
     ('A'..='Z')
@@ -79,6 +107,63 @@ mod tests {
         let folder = tempfile::tempdir().unwrap();
 
         assert!(read_folder(&folder.path().join("missing")).is_err());
+    }
+
+    // フォルダの1枚目の画像は、名前順で最初の画像ファイルである。
+    #[test]
+    fn first_image_is_the_first_image_file_in_name_order() {
+        let folder = tempfile::tempdir().unwrap();
+        fs::write(folder.path().join("a.txt"), "").unwrap();
+        fs::write(folder.path().join("C.png"), "").unwrap();
+        fs::write(folder.path().join("b.jpg"), "").unwrap();
+
+        assert_eq!(
+            first_image(folder.path()),
+            Some(folder.path().join("b.jpg"))
+        );
+    }
+
+    // 子フォルダの中の画像は、1枚目の画像にならない。
+    #[test]
+    fn first_image_ignores_images_in_sub_folders() {
+        let folder = tempfile::tempdir().unwrap();
+        fs::create_dir(folder.path().join("sub")).unwrap();
+        fs::write(folder.path().join("sub").join("a.jpg"), "").unwrap();
+        fs::write(folder.path().join("note.txt"), "").unwrap();
+
+        assert_eq!(first_image(folder.path()), None);
+    }
+
+    // 読めないフォルダには、1枚目の画像がない。
+    #[test]
+    fn unreadable_folder_has_no_first_image() {
+        let folder = tempfile::tempdir().unwrap();
+
+        assert_eq!(first_image(&folder.path().join("missing")), None);
+    }
+
+    // 画像のあるフォルダだけが、その1枚目の画像と組になる。
+    #[test]
+    fn covers_pair_only_the_folders_with_an_image() {
+        let folder = tempfile::tempdir().unwrap();
+        let photos = folder.path().join("photos");
+        let empty = folder.path().join("empty");
+        fs::create_dir(&photos).unwrap();
+        fs::create_dir(&empty).unwrap();
+        fs::write(photos.join("a.jpg"), "").unwrap();
+
+        let covers = folder_covers([empty, photos.clone()], || false);
+
+        assert_eq!(covers, [(photos.clone(), photos.join("a.jpg"))]);
+    }
+
+    // 取り消されると、残りのフォルダは調べない。
+    #[test]
+    fn covers_stop_when_cancelled() {
+        let folder = tempfile::tempdir().unwrap();
+        fs::write(folder.path().join("a.jpg"), "").unwrap();
+
+        assert!(folder_covers([folder.path().to_path_buf()], || true).is_empty());
     }
 
     // ドライブの一覧には、一時フォルダのあるドライブが含まれる。

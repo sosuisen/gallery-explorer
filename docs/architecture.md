@@ -21,7 +21,7 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 | モジュール | 役割 | 主な型と関数 |
 |---|---|---|
 | `domain` | ファイルシステムも画面も使わないルール | `Entry`、`sort_entries`、`crumbs`、`resolve_crumb`、`display_name`、`Favorites`、`Tree`、`DoubleClick` |
-| `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`drives`、`FavoritesStore`、`open_with_default_app`、`FolderWatcher`、`Changes` |
+| `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`folder_covers`、`drives`、`FavoritesStore`、`open_with_default_app`、`FolderWatcher`、`Changes` |
 | `explorer` | ウィンドウの状態と、ユーザーの操作 | `Explorer`、`ViewMode` |
 | `ui` | 状態をWinUIのコントロールに変える | `ExplorerWindow`、`Message` |
 | `main` | エントリーポイント | `main` |
@@ -82,6 +82,17 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 3. `Entry::is_image`が真のファイルは、タイルに`Image`でサムネイルを出す。それ以外は大きなアイコンを出す。
 4. タイルの選択とダブルクリックは、一覧の行と同じ`Message::RowPressed`で扱う。
 
+### フォルダの表紙
+
+フォルダのタイルには、そのフォルダの直下で名前順に最初の画像を、表紙として出す。
+
+1. 今のフォルダが変わったときと、読み直したときに、`ExplorerWindow::load_covers`が`spawn_background`でタスクを始める。
+   前のタスクは取り消す。
+2. タスクは、スレッドプールで`folder_covers`を呼ぶ。`Explorer::folders`の各フォルダを読み、最初の画像を探す。
+   フォルダごとに読み込みが要るので、UIのスレッドでは行わない。
+3. タスクが`Message::CoversFound(フォルダ, 表紙の組)`を返す。`Explorer::set_covers`は、今のフォルダの分だけを受け取る。
+4. `ui`は、`Explorer::cover`で表紙を引き、`Image`で出す。表紙の左下に、フォルダのアイコンを重ねる。
+
 ## windows-reactor 0.100.0の制約と、その対応
 
 - `TreeView`は、展開のイベントがなく、クリックではノードの文字しか分からない。そこで、ツリーは字下げしたボタンの行で作る。
@@ -90,6 +101,8 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 - グリッドも、同じ理由で`GridView`ではなく`VariableSizedWrapGrid`で作る。
 - `StackPanel`と`VariableSizedWrapGrid`は、項目を仮想化しない。項目がとても多いフォルダでは遅くなる。
   グリッドでは、見えていない画像も読み込まれる。
+- フォルダの監視は直下だけなので、子フォルダの中に画像を足しても、そのフォルダの表紙は変わらない。
+  今のフォルダを読み直したときに変わる。
 - 一覧は、キーボードの矢印キーでは選べない。
 
 ## ADRの一覧
