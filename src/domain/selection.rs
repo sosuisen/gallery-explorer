@@ -37,4 +37,10 @@ mod tests {
     fn down_selects_the_next_row() {
         assert_eq!(move_selection(Some(1), 5, 1, Arrow::Down), Some(2));
     }
+
+    // 最後の行で下キーを押しても、選択は動かない。
+    #[test]
+    fn down_on_the_last_row_keeps_the_selection() {
+        assert_eq!(move_selection(Some(4), 5, 1, Arrow::Down), Some(4));
+    }
 }
