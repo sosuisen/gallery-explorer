@@ -238,13 +238,7 @@ impl Explorer {
         if !self.clicks.press(row, at) {
             return None;
         }
-        let entry = self.entries.get(row)?.clone();
-        if entry.is_folder() {
-            self.navigate(&entry.path);
-            None
-        } else {
-            Some(entry.path)
-        }
+        self.open_selected()
     }
 
     /// Moves the selection with a cursor key. columns is the number of tiles in one row of the
@@ -258,7 +252,8 @@ impl Explorer {
         self.selected = move_selection(self.selected, self.entries.len(), columns, arrow);
     }
 
-    /// Opens the selected item.
+    /// Opens the selected item. A folder is shown. For a file, its path is returned, and the
+    /// caller opens it.
     pub fn open_selected(&mut self) -> Option<PathBuf> {
         let entry = self.entries.get(self.selected?)?.clone();
         if entry.is_folder() {
