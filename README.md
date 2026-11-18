@@ -77,6 +77,6 @@ These files are left out of both. No ordinary test can run them.
 
 - `src/main.rs`: the entry point, which starts the WinUI app.
 - `src/ui.rs`: the window, which builds WinUI controls and handles their events.
-- `src/infra/shell.rs`: the call that opens a file with its default app.
+- `src/infra/shell.rs`: the calls that open a file with its default app, and show an item in File Explorer.
 - `src/infra/shell_thumbnail.rs`: the calls that ask the Windows shell for a thumbnail.
   The result depends on the thumbnail handlers installed on the machine.
