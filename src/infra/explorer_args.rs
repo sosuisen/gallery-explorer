@@ -4,7 +4,7 @@ use std::path::Path;
 
 /// Returns the arguments of `explorer.exe` that show `path` in File Explorer.
 pub fn explorer_args(path: &Path, is_folder: bool) -> String {
-    String::new()
+    format!("\"{}\"", path.display())
 }
 
 #[cfg(test)]
