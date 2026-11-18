@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -51,23 +52,25 @@ pub enum SortOrder {
     ModifiedDescending,
 }
 
-/// Sorts folders before files. Inside each group, the order ignores letter case.
+/// Sorts folders before files, and each group in the given order.
+/// Names are compared without letter case. Entries with the same modified time are in name order.
 pub fn sort_entries(entries: &mut [Entry], order: SortOrder) {
-    if matches!(
-        order,
-        SortOrder::ModifiedAscending | SortOrder::ModifiedDescending
-    ) {
-        entries.sort_by_key(|entry| (!entry.is_folder(), entry.modified));
-    } else {
-        entries.sort_by_cached_key(|entry| (!entry.is_folder(), entry.name.to_lowercase()));
-    }
-    if matches!(
-        order,
-        SortOrder::NameDescending | SortOrder::ModifiedDescending
-    ) {
-        let files = entries.partition_point(Entry::is_folder);
-        entries[..files].reverse();
-        entries[files..].reverse();
+    let name = |entry: &Entry| entry.name.to_lowercase();
+    match order {
+        SortOrder::NameAscending => {
+            entries.sort_by_cached_key(|entry| (!entry.is_folder(), name(entry)));
+        }
+        SortOrder::NameDescending => {
+            entries.sort_by_cached_key(|entry| (!entry.is_folder(), Reverse(name(entry))));
+        }
+        SortOrder::ModifiedAscending => {
+            entries.sort_by_cached_key(|entry| (!entry.is_folder(), entry.modified, name(entry)));
+        }
+        SortOrder::ModifiedDescending => {
+            entries.sort_by_cached_key(|entry| {
+                (!entry.is_folder(), Reverse(entry.modified), name(entry))
+            });
+        }
     }
 }
 
