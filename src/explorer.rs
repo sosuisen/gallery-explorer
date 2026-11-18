@@ -6,7 +6,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::domain::{
-    DoubleClick, Entry, Favorites, SortOrder, Tree, TreeRow, resolve_crumb, sort_entries,
+    Arrow, DoubleClick, Entry, Favorites, SortOrder, Tree, TreeRow, move_selection, resolve_crumb,
+    sort_entries,
 };
 use crate::infra::{FavoritesStore, child_folders, read_folder};
 
@@ -244,6 +245,12 @@ impl Explorer {
         } else {
             Some(entry.path)
         }
+    }
+
+    /// Moves the selection with a cursor key. columns is the number of tiles in one row of the
+    /// grid.
+    pub fn move_selection(&mut self, arrow: Arrow, _columns: usize) {
+        self.selected = move_selection(self.selected, self.entries.len(), 1, arrow);
     }
 
     /// Expands a collapsed tree folder, and collapses an expanded one.
