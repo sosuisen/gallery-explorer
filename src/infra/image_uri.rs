@@ -18,4 +18,12 @@ mod tests {
 
         assert_eq!(uri, "file:///D:/絵/一月.png");
     }
+
+    // 空白と`#`と`%`は、URIの中でエンコードされる。
+    #[test]
+    fn spaces_hashes_and_percent_signs_are_encoded() {
+        let uri = image_uri(Path::new(r"D:\my art\#1 100%.png"));
+
+        assert_eq!(uri, "file:///D:/my%20art/%231%20100%25.png");
+    }
 }
