@@ -186,4 +186,20 @@ mod tests {
 
         assert_eq!(names(&entries), ["y", "x", "b.txt", "a.txt"]);
     }
+
+    // 更新日が同じなら、昇順でも降順でも、名前の昇順に並ぶ。
+    #[test]
+    fn entries_with_the_same_modified_time_are_in_name_order() {
+        let mut entries = vec![
+            modified_entry("b.txt", EntryKind::File, 10),
+            modified_entry("a.txt", EntryKind::File, 10),
+            modified_entry("c.txt", EntryKind::File, 20),
+        ];
+
+        sort_entries(&mut entries, SortOrder::ModifiedAscending);
+        assert_eq!(names(&entries), ["a.txt", "b.txt", "c.txt"]);
+
+        sort_entries(&mut entries, SortOrder::ModifiedDescending);
+        assert_eq!(names(&entries), ["c.txt", "a.txt", "b.txt"]);
+    }
 }
