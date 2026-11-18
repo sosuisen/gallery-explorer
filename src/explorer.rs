@@ -258,6 +258,13 @@ impl Explorer {
         self.selected = move_selection(self.selected, self.entries.len(), columns, arrow);
     }
 
+    /// Opens the selected item.
+    pub fn open_selected(&mut self) -> Option<PathBuf> {
+        let entry = self.entries.get(self.selected?)?.clone();
+        self.navigate(&entry.path);
+        None
+    }
+
     /// Expands a collapsed tree folder, and collapses an expanded one.
     pub fn toggle_tree(&mut self, path: &Path) {
         if self.tree.is_expanded(path) {
