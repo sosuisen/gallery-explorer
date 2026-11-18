@@ -261,8 +261,12 @@ impl Explorer {
     /// Opens the selected item.
     pub fn open_selected(&mut self) -> Option<PathBuf> {
         let entry = self.entries.get(self.selected?)?.clone();
-        self.navigate(&entry.path);
-        None
+        if entry.is_folder() {
+            self.navigate(&entry.path);
+            None
+        } else {
+            Some(entry.path)
+        }
     }
 
     /// Expands a collapsed tree folder, and collapses an expanded one.
