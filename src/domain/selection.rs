@@ -61,4 +61,11 @@ mod tests {
         assert_eq!(move_selection(Some(5), 10, 4, Arrow::Up), Some(1));
         assert_eq!(move_selection(Some(2), 10, 4, Arrow::Up), Some(2));
     }
+
+    // 下の行が短く、真下に項目がないときは、下キーで最後の項目が選ばれる。
+    #[test]
+    fn down_selects_the_last_item_when_nothing_is_right_below() {
+        assert_eq!(move_selection(Some(7), 10, 4, Arrow::Down), Some(9));
+        assert_eq!(move_selection(Some(9), 10, 4, Arrow::Down), Some(9));
+    }
 }
