@@ -16,6 +16,7 @@ use crate::infra::{
 
 const SIDE_WIDTH: f64 = 300.0;
 const TREE_INDENT: f64 = 16.0;
+const TREE_ARROW_WIDTH: f64 = 32.0;
 // A gray with low alpha shows on both the light and the dark theme.
 const SELECTED_BACKGROUND: Color = Color::argb(0x28, 0x80, 0x80, 0x80);
 // The size of one grid cell. The width is the thumbnail plus the tile's margin, border and
@@ -413,19 +414,28 @@ fn tree_row(row: &TreeRow, context: &ViewContext<ExplorerWindow>) -> View {
     let indent = TREE_INDENT * row.depth as f64;
     let arrow = if row.expanded { "▼" } else { "▶" };
 
-    StackPanel::new()
-        .orientation(Orientation::Horizontal)
-        .margin(Thickness::new(indent, 0.0, 0.0, 0.0))
-        .children((
-            Button::new()
-                .style(ButtonStyle::Subtle)
-                .on_click(context.message(Message::ToggleTree(row.path.clone())))
-                .content(TextBlock::new().text(arrow).font_size(10.0)),
-            Button::new()
-                .style(ButtonStyle::Subtle)
-                .on_click(context.message(Message::OpenTreeFolder(row.path.clone())))
-                .content(icon_label(Symbol::Folder, display_name(&row.path))),
-        ))
+    // The folder button fills the whole row, so a click anywhere opens the folder.
+    // The arrow button lies on top of it, in the place the indent gives it.
+    Grid::new().children((
+        Button::new()
+            .style(ButtonStyle::Subtle)
+            .horizontal_alignment(HorizontalAlignment::Stretch)
+            .horizontal_content_alignment(HorizontalAlignment::Left)
+            .on_click(context.message(Message::OpenTreeFolder(row.path.clone())))
+            .content(
+                Border::new()
+                    .margin(Thickness::new(indent + TREE_ARROW_WIDTH, 0.0, 0.0, 0.0))
+                    .content(icon_label(Symbol::Folder, display_name(&row.path))),
+            ),
+        Button::new()
+            .style(ButtonStyle::Subtle)
+            .width(TREE_ARROW_WIDTH)
+            .margin(Thickness::new(indent, 0.0, 0.0, 0.0))
+            .horizontal_alignment(HorizontalAlignment::Left)
+            .vertical_alignment(VerticalAlignment::Stretch)
+            .on_click(context.message(Message::ToggleTree(row.path.clone())))
+            .content(TextBlock::new().text(arrow).font_size(10.0)),
+    ))
 }
 
 fn file_row(
