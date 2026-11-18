@@ -12,6 +12,8 @@ use crate::infra::{FavoritesStore, drives, open_with_default_app};
 
 const SIDE_WIDTH: f64 = 300.0;
 const TREE_INDENT: f64 = 16.0;
+// A gray with low alpha shows on both the light and the dark theme.
+const SELECTED_BACKGROUND: Color = Color::argb(0x28, 0x80, 0x80, 0x80);
 
 #[derive(Clone)]
 pub enum Message {
@@ -20,7 +22,6 @@ pub enum Message {
     CrumbClicked(String),
     ToggleTree(PathBuf),
     OpenTreeFolder(PathBuf),
-    Selected(Option<usize>),
     RowPressed(usize, Instant),
     ToggleFavorite,
     RemoveFavorite(PathBuf),
@@ -53,7 +54,6 @@ impl Component for ExplorerWindow {
             Message::CrumbClicked(label) => explorer.crumb_clicked(&label),
             Message::ToggleTree(path) => explorer.toggle_tree(&path),
             Message::OpenTreeFolder(path) => explorer.open_tree_folder(&path),
-            Message::Selected(row) => explorer.select(row),
             Message::RowPressed(row, at) => {
                 if let Some(file) = explorer.press_row(row, at)
                     && let Err(error) = open_with_default_app(&file)
@@ -143,20 +143,26 @@ impl ExplorerWindow {
         )
     }
 
+    // A ListView animates its items when they change, and windows-reactor cannot turn that off.
+    // A StackPanel has no animation, so a folder change shows the new items at once.
+    // An ItemsRepeater has no animation either, but windows-reactor puts each of its rows in a
+    // left-aligned container, so a row cannot fill the width.
     fn file_list(&self, context: &ViewContext<Self>) -> View {
+        let selected = self.explorer.selected();
         let rows = self
             .explorer
             .entries()
             .iter()
             .enumerate()
-            .map(|(row, entry)| (entry.name.clone(), file_row(row, entry, context)));
+            .map(|(row, entry)| {
+                let view = file_row(row, entry, selected == Some(row), context);
+                (entry.name.clone(), view)
+            });
 
-        ListView::new()
+        ScrollViewer::new()
             .grid_row(1)
             .grid_column(1)
-            .selected_index(self.explorer.selected())
-            .on_selection_changed(context.callback(Message::Selected))
-            .collection_slot(ListViewSlot::Items, rows)
+            .content(StackPanel::new().margin(4.0).keyed_children(rows))
     }
 
     fn status_bar(&self) -> View {
@@ -232,29 +238,39 @@ fn tree_row(row: &TreeRow, context: &ViewContext<ExplorerWindow>) -> View {
         ))
 }
 
-fn file_row(row: usize, entry: &Entry, context: &ViewContext<ExplorerWindow>) -> View {
+fn file_row(
+    row: usize,
+    entry: &Entry,
+    selected: bool,
+    context: &ViewContext<ExplorerWindow>,
+) -> View {
     let symbol = if entry.is_folder() {
         Symbol::Folder
     } else {
         Symbol::Document
     };
-    // The list reports no double click, so the row reports each press with its time.
-    let pressed = context.callback(move |pointer: PointerEventInfo| {
-        // A right or middle press is not part of a double click; `usize::MAX` matches no row.
-        let row = if pointer.is_left_button_pressed {
-            row
-        } else {
-            usize::MAX
-        };
-        Message::RowPressed(row, Instant::now())
-    });
+    // The selected row gets a gray background and an accent bar on the left. Every row keeps the
+    // bar's width, so the text does not move when the selection changes.
+    let (background, bar) = if selected {
+        (SELECTED_BACKGROUND, Brush::Theme(ThemeBrush::Accent))
+    } else {
+        // A border without a background receives no pointer events.
+        (Color::transparent(), Brush::Solid(Color::transparent()))
+    };
+    // The rows report no double click, so each row reports every left press with its time.
+    let sender = context.sender();
+    let pressed = move |pointer: PointerEventInfo| {
+        if pointer.is_left_button_pressed {
+            sender.send(Message::RowPressed(row, Instant::now()));
+        }
+    };
 
-    ListViewItem::new().content(
-        Border::new()
-            // A border without a background receives no pointer events.
-            .background(Color::transparent())
-            .padding(Thickness::xy(0.0, 6.0))
-            .on_pointer_pressed(pressed)
-            .content(icon_label(symbol, entry.name.clone())),
-    )
+    Border::new()
+        .background(background)
+        .border_brush(bar)
+        .border_thickness(Thickness::new(3.0, 0.0, 0.0, 0.0))
+        .corner_radius(4.0)
+        .padding(Thickness::new(12.0, 8.0, 12.0, 8.0))
+        .on_pointer_pressed(pressed)
+        .content(icon_label(symbol, entry.name.clone()))
 }

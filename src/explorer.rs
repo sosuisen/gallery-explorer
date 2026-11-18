@@ -99,15 +99,12 @@ impl Explorer {
         }
     }
 
-    pub fn select(&mut self, row: Option<usize>) {
-        self.selected = row;
-    }
-
-    /// Records a press on a list row.
+    /// Records a press on a list row. The pressed row becomes the selected row.
     ///
     /// A double click on a folder shows that folder. A double click on a file returns its path,
     /// and the caller opens it.
     pub fn press_row(&mut self, row: usize, at: Instant) -> Option<PathBuf> {
+        self.selected = Some(row);
         if !self.clicks.press(row, at) {
             return None;
         }
@@ -222,7 +219,6 @@ mod tests {
     fn double_click_on_a_folder_lists_its_items() {
         let folder = sample();
         let mut explorer = open(&folder);
-        explorer.select(Some(0));
 
         let opened = double_click(&mut explorer, 0);
 
@@ -244,13 +240,13 @@ mod tests {
         assert_eq!(explorer.current(), folder.path());
     }
 
-    // 選んだ行は、選択として覚えられる。
+    // 押した行が、選択された行になる。
     #[test]
-    fn selected_row_is_remembered() {
+    fn pressed_row_becomes_the_selected_row() {
         let folder = sample();
         let mut explorer = open(&folder);
 
-        explorer.select(Some(1));
+        explorer.press_row(1, Instant::now());
 
         assert_eq!(explorer.selected(), Some(1));
     }
