@@ -275,9 +275,11 @@ impl Explorer {
     }
 
     /// Moves to the favorite in `row` of the list of favorites.
-    /// Favorites hold pictures to look at, so they open in the grid.
+    /// Favorites hold pictures to look at, so they open in the grid, newest first.
     pub fn open_favorite(&mut self, row: usize) {
         let path = self.favorites.paths()[row].clone();
+        // Set before moving, so the new folder is read in this order.
+        self.sort_order = SortOrder::ModifiedDescending;
         self.navigate(&path);
         self.view_mode = ViewMode::Grid;
     }
