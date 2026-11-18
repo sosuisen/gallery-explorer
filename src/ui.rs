@@ -23,9 +23,15 @@ const SELECTED_BACKGROUND: Color = Color::argb(0x28, 0x80, 0x80, 0x80);
 // padding. The height also holds the name.
 const TILE_WIDTH: f64 = 136.0;
 const TILE_HEIGHT: f64 = 132.0;
-const THUMBNAIL_WIDTH: f64 = 120.0;
-const THUMBNAIL_HEIGHT: f64 = 90.0;
-const GRID_ICON_HEIGHT: f64 = 48.0;
+const GRID_PREVIEW: PreviewSize = PreviewSize {
+    width: 120.0,
+    height: 90.0,
+    icon_height: 48.0,
+    badge_icon_height: 20.0,
+    badge_space: 4.0,
+};
+/// The list shows the same previews at 60% of the size in the grid.
+const LIST_PREVIEW: PreviewSize = GRID_PREVIEW.scaled(0.6);
 // The longest side of a shell thumbnail in pixels. It stays sharp at a display scale of 200%.
 const SHELL_THUMBNAIL_SIZE: u32 = 256;
 
@@ -163,10 +169,7 @@ impl ExplorerWindow {
             Message::FavoritesReordered(keys) => {
                 explorer.reorder_favorites(keys.into_iter().map(PathBuf::from).collect())
             }
-            Message::ToggleViewMode => {
-                explorer.toggle_view_mode();
-                self.load_thumbnails(context);
-            }
+            Message::ToggleViewMode => explorer.toggle_view_mode(),
             Message::SortChosen(Some(row)) => explorer.set_sort_order(SORT_ORDERS[row].0),
             Message::SortChosen(None) => {}
             Message::FolderChanged(folder) => {
@@ -198,13 +201,9 @@ impl ExplorerWindow {
     }
 
     /// Asks the shell for the thumbnails of the files that are not images, on the thread pool.
-    /// Only the grid shows them, and each one can take a while, so the list does not ask.
     fn load_thumbnails(&mut self, context: &ComponentContext<Self>) {
         if let Some(task) = self.thumbnails_task.take() {
             task.cancel();
-        }
-        if self.explorer.view_mode() != ViewMode::Grid {
-            return;
         }
         let folder = self.explorer.current().to_path_buf();
         let files = self.explorer.non_image_files();
@@ -374,12 +373,10 @@ impl ExplorerWindow {
             .enumerate()
             .map(|(row, entry)| {
                 let is_selected = selected == Some(row);
+                let source = thumbnail_source(&self.explorer, entry);
                 let view = match mode {
-                    ViewMode::List => file_row(row, entry, is_selected, context),
-                    ViewMode::Grid => {
-                        let source = thumbnail_source(&self.explorer, entry);
-                        file_tile(row, entry, source, is_selected, context)
-                    }
+                    ViewMode::List => file_row(row, entry, source, is_selected, context),
+                    ViewMode::Grid => file_tile(row, entry, source, is_selected, context),
                 };
                 (entry.name.clone(), view)
             });
@@ -488,6 +485,7 @@ fn tree_row(row: &TreeRow, context: &ViewContext<ExplorerWindow>) -> View {
 fn file_row(
     row: usize,
     entry: &Entry,
+    source: Option<ThumbnailSource>,
     selected: bool,
     context: &ViewContext<ExplorerWindow>,
 ) -> View {
@@ -500,9 +498,19 @@ fn file_row(
         .border_brush(bar)
         .border_thickness(Thickness::new(3.0, 0.0, 0.0, 0.0))
         .corner_radius(4.0)
-        .padding(Thickness::new(12.0, 8.0, 12.0, 8.0))
+        .padding(Thickness::new(12.0, 4.0, 12.0, 4.0))
         .on_pointer_pressed(press_handler(row, entry, context))
-        .content(icon_label(entry_symbol(entry), entry.name.clone()))
+        .content(
+            StackPanel::new()
+                .orientation(Orientation::Horizontal)
+                .spacing(12.0)
+                .children((
+                    preview(entry, source, LIST_PREVIEW),
+                    TextBlock::new()
+                        .text(entry.name.clone())
+                        .vertical_alignment(VerticalAlignment::Center),
+                )),
+        )
 }
 
 fn file_tile(
@@ -525,7 +533,7 @@ fn file_tile(
         .on_pointer_pressed(press_handler(row, entry, context))
         .content(
             StackPanel::new().spacing(4.0).children((
-                preview(entry, source),
+                preview(entry, source, GRID_PREVIEW),
                 TextBlock::new()
                     .text(entry.name.clone())
                     .text_trimming(TextTrimming::CharacterEllipsis)
@@ -556,8 +564,31 @@ fn thumbnail_source(explorer: &Explorer, entry: &Entry) -> Option<ThumbnailSourc
     }
 }
 
+/// The size of a preview, and of the folder badge on a cover.
+#[derive(Clone, Copy)]
+struct PreviewSize {
+    width: f64,
+    height: f64,
+    icon_height: f64,
+    badge_icon_height: f64,
+    /// The padding and the margin of the badge.
+    badge_space: f64,
+}
+
+impl PreviewSize {
+    const fn scaled(self, factor: f64) -> Self {
+        Self {
+            width: self.width * factor,
+            height: self.height * factor,
+            icon_height: self.icon_height * factor,
+            badge_icon_height: self.badge_icon_height * factor,
+            badge_space: self.badge_space * factor,
+        }
+    }
+}
+
 /// Shows the thumbnail, or a large icon when there is none.
-fn preview(entry: &Entry, source: Option<ThumbnailSource>) -> View {
+fn preview(entry: &Entry, source: Option<ThumbnailSource>, size: PreviewSize) -> View {
     let has_thumbnail = source.is_some();
     let thumbnail = source.and_then(|source| match source {
         // Not `source_file`: `image_uri` says why.
@@ -568,32 +599,36 @@ fn preview(entry: &Entry, source: Option<ThumbnailSource>) -> View {
     let content: View = match thumbnail {
         Some(image) => image
             .stretch(Stretch::Uniform)
-            .width(THUMBNAIL_WIDTH)
-            .height(THUMBNAIL_HEIGHT)
+            .width(size.width)
+            .height(size.height)
             .into(),
-        None => Viewbox::new().height(GRID_ICON_HEIGHT).slot(
+        None => Viewbox::new().height(size.icon_height).slot(
             ViewboxSlot::Child,
             SymbolIcon::new().symbol(entry_symbol(entry)),
         ),
     };
-    let grid = Grid::new().height(THUMBNAIL_HEIGHT);
+    let grid = Grid::new().width(size.width).height(size.height);
     if entry.is_folder() && has_thumbnail {
-        grid.children((content, folder_badge()))
+        grid.children((content, folder_badge(size)))
     } else {
         grid.children((content,))
     }
 }
 
 /// A small folder icon on the cover, so that a folder does not look like an image file.
-fn folder_badge() -> View {
+fn folder_badge(size: PreviewSize) -> View {
     Border::new()
         .background(Brush::Theme(ThemeBrush::SolidBackground))
         .corner_radius(4.0)
-        .padding(4.0)
-        .margin(4.0)
+        .padding(size.badge_space)
+        .margin(size.badge_space)
         .horizontal_alignment(HorizontalAlignment::Left)
         .vertical_alignment(VerticalAlignment::Bottom)
-        .content(SymbolIcon::new().symbol(Symbol::Folder))
+        .content(
+            Viewbox::new()
+                .height(size.badge_icon_height)
+                .slot(ViewboxSlot::Child, SymbolIcon::new().symbol(Symbol::Folder)),
+        )
 }
 
 /// Waits on the thread pool, because the watcher's thread cannot send to the window.
