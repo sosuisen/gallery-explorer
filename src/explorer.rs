@@ -735,6 +735,18 @@ mod tests {
         assert_eq!(explorer.current(), photos);
     }
 
+    // お気に入りから開くと、一覧で見ていてもグリッドで表示される。
+    #[test]
+    fn opening_a_favorite_shows_the_grid() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.toggle_favorite();
+
+        explorer.open_favorite(0);
+
+        assert_eq!(explorer.view_mode(), ViewMode::Grid);
+    }
+
     // お気に入りを並べ替えると、その順序が次の起動でも残っている。
     #[test]
     fn reordered_favorites_keep_their_order_on_the_next_open() {
