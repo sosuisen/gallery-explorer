@@ -18,4 +18,12 @@ mod tests {
 
         assert_eq!(args, r#""D:\my art""#);
     }
+
+    // ファイルは、そのファイルを選んだ状態で親フォルダを開く引数になる。
+    #[test]
+    fn a_file_is_selected_in_its_folder() {
+        let args = explorer_args(Path::new(r"D:\my art\一月.png"), false);
+
+        assert_eq!(args, r#"/select,"D:\my art\一月.png""#);
+    }
 }
