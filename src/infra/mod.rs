@@ -1,6 +1,7 @@
 //! Access to the file system and to the favorites file.
 
 mod bitmap;
+mod explorer_args;
 mod file_system;
 mod image_uri;
 mod shell;
