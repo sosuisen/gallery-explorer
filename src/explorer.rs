@@ -251,6 +251,7 @@ impl Explorer {
     /// grid.
     pub fn move_selection(&mut self, arrow: Arrow, columns: usize) {
         let columns = match self.view_mode {
+            ViewMode::List if matches!(arrow, Arrow::Left | Arrow::Right) => return,
             ViewMode::List => 1,
             ViewMode::Grid => columns,
         };
