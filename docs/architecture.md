@@ -21,7 +21,7 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 | モジュール | 役割 | 主な型と関数 |
 |---|---|---|
 | `domain` | ファイルシステムも画面も使わないルール | `Entry`、`sort_entries`、`crumbs`、`resolve_crumb`、`display_name`、`Favorites`、`Tree`、`DoubleClick` |
-| `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`drives`、`FavoritesStore`、`open_with_default_app` |
+| `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`drives`、`FavoritesStore`、`open_with_default_app`、`FolderWatcher`、`Changes` |
 | `explorer` | ウィンドウの状態と、ユーザーの操作 | `Explorer`、`ViewMode` |
 | `ui` | 状態をWinUIのコントロールに変える | `ExplorerWindow`、`Message` |
 | `main` | エントリーポイント | `main` |
@@ -32,6 +32,7 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 ## 外部とのやり取り
 
 - フォルダの読み込み: `std::fs::read_dir`を使う。
+- フォルダの監視: `notify`クレートを使う。Windowsでは`ReadDirectoryChangesW`で、今のフォルダの直下だけを監視する。
 - ドライブの一覧: `A:\`から`Z:\`のうち、存在するものを並べる。
 - ファイルを開く: `explorer.exe <パス>`を起動する。Windowsが既定のアプリで開く。
 - サムネイル: `Image::source_file`に画像ファイルのパスを渡す。読み込みとデコードはWinUIが行う。
@@ -63,6 +64,16 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 2. `Explorer::press_row`が、押された行を選択にする。選択された行は、灰色の背景と左のアクセント色の線で示す。
 3. `Explorer::press_row`が`DoubleClick`に渡す。同じ行への500ms以内の2回目の押下が、ダブルクリックになる。
 4. フォルダなら`navigate`する。ファイルならパスを返し、`ui`が`open_with_default_app`で開く。
+
+### フォルダの変化の反映
+
+1. `ExplorerWindow`は、`update`のたびに今のフォルダを確かめる。変わっていれば、`FolderWatcher::start`で監視を始める。
+   前のフォルダの待ちの`ComponentTask`は取り消し、前の`FolderWatcher`は捨てる。
+2. `notify`のスレッドは、変化のたびにチャネルへ通知を送る。
+3. `spawn_background`のタスクが、スレッドプールで`Changes::wait`を呼ぶ。最初の通知のあと、200ms通知が止まるまで待つ。
+   `windows-reactor`の`LocalSender`は別スレッドに渡せないので、待ちのタスクの戻り値でUIのスレッドへ伝える。
+4. タスクが`Message::FolderChanged(フォルダ)`を返す。今のフォルダと同じなら、`Explorer::refresh`で読み直し、次の待ちのタスクを始める。
+5. `Explorer::refresh`は、選択していた項目をパスで探し直す。ダブルクリックの数え方はリセットする。
 
 ### グリッドとサムネイル
 

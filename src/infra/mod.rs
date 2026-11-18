@@ -3,7 +3,9 @@
 mod file_system;
 mod shell;
 mod store;
+mod watcher;
 
 pub use file_system::{child_folders, drives, read_folder};
 pub use shell::open_with_default_app;
 pub use store::FavoritesStore;
+pub use watcher::{Changes, FolderWatcher};

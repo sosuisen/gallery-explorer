@@ -110,6 +110,31 @@ impl Explorer {
         }
     }
 
+    /// Reads the current folder again. The selected item stays selected while it is still there.
+    ///
+    /// When the folder cannot be read any more, the list becomes empty and the error is kept.
+    pub fn refresh(&mut self) {
+        let selected = self
+            .selected
+            .and_then(|row| self.entries.get(row))
+            .map(|entry| entry.path.clone());
+        // The rows may move, so a press before the refresh must not pair with one after it.
+        self.clicks.reset();
+        match read_folder(&self.current) {
+            Ok(entries) => {
+                self.selected =
+                    selected.and_then(|path| entries.iter().position(|entry| entry.path == path));
+                self.entries = entries;
+            }
+            Err(error) => {
+                self.entries.clear();
+                self.selected = None;
+                let current = self.current.clone();
+                self.fail(&current, &error);
+            }
+        }
+    }
+
     pub fn go_up(&mut self) {
         if let Some(parent) = self.current.parent().map(Path::to_path_buf) {
             self.navigate(&parent);
@@ -223,6 +248,87 @@ mod tests {
         let at = Instant::now();
         assert_eq!(explorer.press_row(row, at), None);
         explorer.press_row(row, at)
+    }
+
+    // 読み直すと、追加されたファイルが一覧に並ぶ。
+    #[test]
+    fn refreshing_shows_an_added_file() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        fs::write(folder.path().join("added.jpg"), "").unwrap();
+
+        explorer.refresh();
+
+        assert_eq!(names(&explorer), ["photos", "added.jpg", "note.txt"]);
+    }
+
+    // 読み直すと、削除されたファイルは一覧から消える。
+    #[test]
+    fn refreshing_drops_a_removed_file() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        fs::remove_file(folder.path().join("note.txt")).unwrap();
+
+        explorer.refresh();
+
+        assert_eq!(names(&explorer), ["photos"]);
+    }
+
+    // 前に項目が増えても、選択していた項目は選択されたままである。
+    #[test]
+    fn selected_item_stays_selected_when_an_item_is_added_before_it() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.press_row(1, Instant::now());
+        fs::write(folder.path().join("a.jpg"), "").unwrap();
+
+        explorer.refresh();
+
+        let selected = explorer.selected().unwrap();
+        assert_eq!(explorer.entries()[selected].name, "note.txt");
+    }
+
+    // 選択していた項目が消えると、選択はなくなる。
+    #[test]
+    fn selection_is_cleared_when_the_selected_item_is_removed() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.press_row(1, Instant::now());
+        fs::remove_file(folder.path().join("note.txt")).unwrap();
+
+        explorer.refresh();
+
+        assert_eq!(explorer.selected(), None);
+    }
+
+    // 読み直しの前後の押下は、ダブルクリックにならない。
+    #[test]
+    fn presses_before_and_after_a_refresh_are_not_a_double_click() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        let at = Instant::now();
+        explorer.press_row(0, at);
+
+        explorer.refresh();
+
+        assert_eq!(explorer.press_row(0, at), None);
+        assert_eq!(explorer.current(), folder.path());
+    }
+
+    // 今のフォルダが消えると、一覧は空になり、エラーが示される。
+    #[test]
+    fn removed_current_folder_empties_the_list_and_shows_an_error() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.navigate(&folder.path().join("photos"));
+        explorer.press_row(0, Instant::now());
+        fs::remove_dir_all(folder.path().join("photos")).unwrap();
+
+        explorer.refresh();
+
+        assert!(explorer.entries().is_empty());
+        assert_eq!(explorer.selected(), None);
+        assert!(explorer.error().is_some());
     }
 
     // 起動すると、開始フォルダの中身が一覧に並ぶ。

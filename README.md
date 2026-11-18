@@ -15,6 +15,7 @@ A file explorer for Windows with favorites. It is written in Rust with
 - Favorites: add the current folder, remove it, and jump to it. They are kept between runs.
 - A double click opens a folder in the list, or opens a file with its default app.
 - A grid view with thumbnails of image files. A button switches between the list and the grid.
+- Live updates: files that are added to or removed from the open folder show up at once.
 
 ## Requirements
 
