@@ -68,6 +68,19 @@ mod tests {
         assert_eq!(store.load().unwrap(), Favorites::default());
     }
 
+    // ファイルがあるのに読めないときは、エラーになる。
+    // フォルダはファイルとして読めないので、読めないファイルの代わりに使う。
+    #[test]
+    fn loading_is_an_error_when_the_file_exists_but_cannot_be_read() {
+        let folder = tempfile::tempdir().unwrap();
+
+        assert!(
+            FavoritesStore::new(folder.path().to_path_buf())
+                .load()
+                .is_err()
+        );
+    }
+
     // 壊れたファイルの読み込みは、エラーになる。
     #[test]
     fn loading_a_broken_file_is_an_error() {

@@ -1,7 +1,6 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::domain::{Entry, EntryKind, sort_entries};
 
@@ -45,11 +44,6 @@ pub fn drives() -> Vec<PathBuf> {
         .collect()
 }
 
-/// Opens a file with the app that Windows assigns to its type.
-pub fn open_with_default_app(path: &Path) -> io::Result<()> {
-    Command::new("explorer.exe").arg(path).spawn().map(drop)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,6 +79,15 @@ mod tests {
         let folder = tempfile::tempdir().unwrap();
 
         assert!(read_folder(&folder.path().join("missing")).is_err());
+    }
+
+    // ドライブの一覧には、一時フォルダのあるドライブが含まれる。
+    #[test]
+    fn drives_include_the_drive_of_the_temporary_folder() {
+        let folder = tempfile::tempdir().unwrap();
+        let root = folder.path().ancestors().last().unwrap();
+
+        assert!(drives().iter().any(|drive| drive == root));
     }
 
     // 子フォルダの一覧には、ファイルが含まれない。

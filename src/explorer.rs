@@ -132,7 +132,7 @@ impl Explorer {
     /// Shows a tree folder in the list and expands it in the tree.
     pub fn open_tree_folder(&mut self, path: &Path) {
         self.navigate(path);
-        if self.error.is_none() && !self.tree.is_expanded(path) {
+        if !self.tree.is_expanded(path) {
             self.expand_tree(path);
         }
     }
@@ -244,6 +244,17 @@ mod tests {
         assert_eq!(explorer.current(), folder.path());
     }
 
+    // 選んだ行は、選択として覚えられる。
+    #[test]
+    fn selected_row_is_remembered() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+
+        explorer.select(Some(1));
+
+        assert_eq!(explorer.selected(), Some(1));
+    }
+
     // 1回押しただけでは、フォルダは変わらない。
     #[test]
     fn single_press_does_not_change_the_folder() {
@@ -313,6 +324,7 @@ mod tests {
         let folder = sample();
         let mut explorer = open(&folder);
         explorer.report_error("failed".to_string());
+        assert_eq!(explorer.error(), Some("failed"));
 
         explorer.navigate(&folder.path().join("photos"));
 
