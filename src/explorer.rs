@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::domain::{DoubleClick, Entry, Favorites, Tree, TreeRow, resolve_crumb};
@@ -22,6 +23,8 @@ pub struct Explorer {
     entries: Vec<Entry>,
     /// The first image of each folder in `entries`, by folder path.
     covers: HashMap<PathBuf, PathBuf>,
+    /// The shell thumbnails of files that are not images, by file path. They are encoded images.
+    thumbnails: HashMap<PathBuf, Arc<[u8]>>,
     selected: Option<usize>,
     view_mode: ViewMode,
     error: Option<String>,
@@ -46,6 +49,7 @@ impl Explorer {
             current: start.to_path_buf(),
             entries: Vec::new(),
             covers: HashMap::new(),
+            thumbnails: HashMap::new(),
             selected: None,
             view_mode: ViewMode::List,
             error: None,
@@ -110,6 +114,28 @@ impl Explorer {
         }
     }
 
+    /// The files that WinUI cannot show as images. The shell may make thumbnails for them.
+    pub fn non_image_files(&self) -> Vec<PathBuf> {
+        self.entries
+            .iter()
+            .filter(|entry| !entry.is_folder() && !entry.is_image())
+            .map(|entry| entry.path.clone())
+            .collect()
+    }
+
+    /// Returns the shell thumbnail of a file, when one was made.
+    pub fn thumbnail(&self, entry: &Entry) -> Option<&Arc<[u8]>> {
+        self.thumbnails.get(&entry.path)
+    }
+
+    /// Sets the shell thumbnails made for the files in `folder`.
+    /// Thumbnails of a folder that is no longer shown arrive late and are ignored.
+    pub fn set_thumbnails(&mut self, folder: &Path, thumbnails: Vec<(PathBuf, Arc<[u8]>)>) {
+        if folder == self.current {
+            self.thumbnails = thumbnails.into_iter().collect();
+        }
+    }
+
     pub fn favorites(&self) -> &[PathBuf] {
         self.favorites.paths()
     }
@@ -129,6 +155,7 @@ impl Explorer {
                 self.current = path.to_path_buf();
                 self.entries = entries;
                 self.covers.clear();
+                self.thumbnails.clear();
                 self.selected = None;
                 self.clicks.reset();
                 self.error = None;
@@ -342,6 +369,64 @@ mod tests {
             explorer.cover(&explorer.entries()[0]),
             Some(image.as_path())
         );
+    }
+
+    // 画像でないファイルの一覧には、フォルダも画像ファイルも含まれない。
+    #[test]
+    fn non_image_files_leave_out_folders_and_images() {
+        let folder = sample();
+        fs::write(folder.path().join("a.jpg"), "").unwrap();
+        fs::write(folder.path().join("b.clip"), "").unwrap();
+        let explorer = open(&folder);
+
+        assert_eq!(
+            explorer.non_image_files(),
+            [folder.path().join("b.clip"), folder.path().join("note.txt")]
+        );
+    }
+
+    // 作られたサムネイルが、そのファイルのサムネイルになる。
+    #[test]
+    fn made_thumbnail_becomes_the_thumbnail_of_its_file() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        let bytes: Arc<[u8]> = Arc::from(vec![1, 2, 3]);
+
+        explorer.set_thumbnails(
+            folder.path(),
+            vec![(folder.path().join("note.txt"), bytes.clone())],
+        );
+
+        assert_eq!(explorer.thumbnail(&explorer.entries()[1]), Some(&bytes));
+        assert_eq!(explorer.thumbnail(&explorer.entries()[0]), None);
+    }
+
+    // 前のフォルダのために作ったサムネイルは、無視される。
+    #[test]
+    fn thumbnails_for_another_folder_are_ignored() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+
+        explorer.set_thumbnails(
+            &folder.path().join("photos"),
+            vec![(folder.path().join("note.txt"), Arc::from(vec![1]))],
+        );
+
+        assert_eq!(explorer.thumbnail(&explorer.entries()[1]), None);
+    }
+
+    // フォルダを移ると、前のフォルダのサムネイルは消える。
+    #[test]
+    fn thumbnails_are_cleared_when_the_folder_changes() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        let note = folder.path().join("note.txt");
+        explorer.set_thumbnails(folder.path(), vec![(note.clone(), Arc::from(vec![1]))]);
+
+        explorer.navigate(&folder.path().join("photos"));
+        explorer.go_up();
+
+        assert_eq!(explorer.thumbnail(&explorer.entries()[1]), None);
     }
 
     // 読み直すと、追加されたファイルが一覧に並ぶ。

@@ -2,8 +2,11 @@
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld.exe"
 
-# `cargo cov` measures the test coverage with cargo-llvm-cov. It prints a table per file;
-# `cargo cov --html` writes a browsable report to target/llvm-cov/html/.
+# `cargo coverage` measures the test coverage with cargo-llvm-cov. It prints a table per file.
+# `cargo coverage --html` writes a browsable report to target/llvm-cov/html/.
+#
+# The alias is not named `cov`. With cargo 1.99.1 and cargo-llvm-cov 0.9.1, an alias named
+# `cov` fails with "unrecognized subcommand llvm-cov". The same alias under another name works.
 #
 # The numbers are not a target: the report is read for the lines no test reaches, which are
 # either removed or given a test of the behaviour that needs them.
@@ -13,6 +16,12 @@ linker = "rust-lld.exe"
 # - src/main.rs: the entry point, which starts the WinUI app
 # - src/ui.rs: the window, which builds WinUI controls and handles their events
 # - src/infra/shell.rs: the call that opens a file with its default app
+# - src/infra/shell_thumbnail.rs (since 2026-11-18): the calls that ask the Windows shell for a
+#   thumbnail. The result depends on the thumbnail handlers installed on the machine.
 # cargo-mutants skips the same files; see .cargo/mutants.toml.
 [alias]
-cov = ["llvm-cov", "--ignore-filename-regex", "src[/\\\\](main|ui|infra[/\\\\]shell)\\.rs$"]
+coverage = [
+    "llvm-cov",
+    "--ignore-filename-regex",
+    "src[/\\\\](main|ui|infra[/\\\\]shell|infra[/\\\\]shell_thumbnail)\\.rs$",
+]

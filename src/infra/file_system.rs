@@ -1,6 +1,7 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::domain::{Entry, EntryKind, sort_entries};
 
@@ -62,6 +63,26 @@ pub fn folder_covers(
         }
     }
     covers
+}
+
+/// Makes a thumbnail for each file with `thumbnail_of`. Files without one are left out.
+///
+/// It stops early, with the thumbnails made so far, when `cancelled` returns `true`.
+pub fn collect_thumbnails(
+    files: impl IntoIterator<Item = PathBuf>,
+    cancelled: impl Fn() -> bool,
+    thumbnail_of: impl Fn(&Path) -> Option<Vec<u8>>,
+) -> Vec<(PathBuf, Arc<[u8]>)> {
+    let mut thumbnails = Vec::new();
+    for file in files {
+        if cancelled() {
+            break;
+        }
+        if let Some(bytes) = thumbnail_of(&file) {
+            thumbnails.push((file, Arc::from(bytes)));
+        }
+    }
+    thumbnails
 }
 
 /// Lists the drive roots that exist now, from `A:\` to `Z:\`.
@@ -164,6 +185,29 @@ mod tests {
         fs::write(folder.path().join("a.jpg"), "").unwrap();
 
         assert!(folder_covers([folder.path().to_path_buf()], || true).is_empty());
+    }
+
+    // サムネイルを作れたファイルだけが、そのサムネイルと組になる。
+    #[test]
+    fn thumbnails_pair_only_the_files_that_have_one() {
+        let clip = PathBuf::from("a.clip");
+        let text = PathBuf::from("b.txt");
+
+        let thumbnails = collect_thumbnails(
+            [clip.clone(), text],
+            || false,
+            |file| (file.extension()? == "clip").then(|| vec![1, 2, 3]),
+        );
+
+        assert_eq!(thumbnails, [(clip, Arc::from(vec![1, 2, 3]))]);
+    }
+
+    // 取り消されると、残りのファイルのサムネイルは作らない。
+    #[test]
+    fn thumbnails_stop_when_cancelled() {
+        let thumbnails = collect_thumbnails([PathBuf::from("a.clip")], || true, |_| Some(vec![1]));
+
+        assert!(thumbnails.is_empty());
     }
 
     // ドライブの一覧には、一時フォルダのあるドライブが含まれる。

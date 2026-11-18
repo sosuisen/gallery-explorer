@@ -21,12 +21,13 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 | モジュール | 役割 | 主な型と関数 |
 |---|---|---|
 | `domain` | ファイルシステムも画面も使わないルール | `Entry`、`sort_entries`、`crumbs`、`resolve_crumb`、`display_name`、`Favorites`、`Tree`、`DoubleClick` |
-| `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`folder_covers`、`drives`、`FavoritesStore`、`open_with_default_app`、`FolderWatcher`、`Changes` |
+| `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`folder_covers`、`collect_thumbnails`、`shell_thumbnail`、`drives`、`FavoritesStore`、`open_with_default_app`、`FolderWatcher`、`Changes` |
 | `explorer` | ウィンドウの状態と、ユーザーの操作 | `Explorer`、`ViewMode` |
 | `ui` | 状態をWinUIのコントロールに変える | `ExplorerWindow`、`Message` |
 | `main` | エントリーポイント | `main` |
 
-`ui`と`main`、`infra/shell.rs`にはテストがない。WinUIのウィンドウや別のプログラムの起動が要るためである。
+`ui`と`main`、`infra/shell.rs`、`infra/shell_thumbnail.rs`にはテストがない。
+WinUIのウィンドウ、別のプログラムの起動、Windowsのシェルのサムネイル機能が要るためである。
 画面に関わる判断は、テストできるように`explorer`と`domain`に置く。
 
 ## 外部とのやり取り
@@ -38,6 +39,11 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 - サムネイル: `Image::source_file`に画像ファイルのパスを渡す。読み込みとデコードはWinUIが行う。
   WinUIは表示の大きさでデコードするので、大きな写真が多くてもメモリは増えにくい。
   4000×3000のJPEG 60枚のフォルダで、130MBだった。
+- シェルのサムネイル: 画像ファイル以外は、`windows`クレートで`IShellItemImageFactory::GetImage`を呼ぶ。
+  エクスプローラーと同じく、アプリが登録したサムネイル機能（`.clip`ならClip Studio Paint）が使われる。
+  `SIIGBF_THUMBNAILONLY`を付けるので、サムネイル機能のない種類では何も返らず、アプリのアイコンを出す。
+  受け取った`HBITMAP`を`infra/bitmap.rs`の`encode_bmp`でBMPのバイト列にし、`Image::source_data`に渡す。
+  1枚は最大256×256pxで、BMPのまま持つので、1枚あたり最大256KBのメモリを使う。
 - お気に入りの保存: `%APPDATA%\GalleryExplorer\favorites.json`に、パスの文字列のJSON配列で保存する。
 - 実行時には、Windows App Runtimeがインストールされている必要がある。
 
@@ -92,6 +98,16 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
    フォルダごとに読み込みが要るので、UIのスレッドでは行わない。
 3. タスクが`Message::CoversFound(フォルダ, 表紙の組)`を返す。`Explorer::set_covers`は、今のフォルダの分だけを受け取る。
 4. `ui`は、`Explorer::cover`で表紙を引き、`Image`で出す。表紙の左下に、フォルダのアイコンを重ねる。
+
+### 画像以外のファイルのサムネイル
+
+1. グリッドのときだけ、`ExplorerWindow::load_thumbnails`が`spawn_background`でタスクを始める。
+   始めるのは、今のフォルダが変わったとき、読み直したとき、グリッドに切り替えたときである。前のタスクは取り消す。
+   一覧ではサムネイルを使わず、1つ作るのにも時間がかかるので、一覧のときは始めない。
+2. タスクは、`Explorer::non_image_files`の各ファイルについて、`collect_thumbnails`で`shell_thumbnail`を呼ぶ。
+3. タスクが`Message::ThumbnailsMade(フォルダ, サムネイルの組)`を返す。`Explorer::set_thumbnails`は、今のフォルダの分だけを受け取る。
+4. `ui`は、`Explorer::thumbnail`でBMPのバイト列を引き、`EncodedImage`にして`Image`で出す。
+   同じ`Arc<[u8]>`を毎回渡すので、`windows-reactor`は描き直しのたびにデコードし直さない。
 
 ## windows-reactor 0.100.0の制約と、その対応
 
