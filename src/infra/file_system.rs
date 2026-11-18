@@ -2,6 +2,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use crate::domain::{Entry, EntryKind, SortOrder, sort_entries};
 
@@ -21,6 +22,7 @@ pub fn read_folder(path: &Path) -> io::Result<Vec<Entry>> {
             name: item.file_name().to_string_lossy().into_owned(),
             path,
             kind,
+            modified: SystemTime::UNIX_EPOCH,
         });
     }
     sort_entries(&mut entries, SortOrder::NameAscending);

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 /// File extensions of the images that WinUI can show. They are in lowercase.
 const IMAGE_EXTENSIONS: [&str; 10] = [
@@ -18,6 +19,7 @@ pub struct Entry {
     pub name: String,
     pub path: PathBuf,
     pub kind: EntryKind,
+    pub modified: SystemTime,
 }
 
 impl Entry {
@@ -63,11 +65,19 @@ pub fn sort_entries(entries: &mut [Entry], order: SortOrder) {
 mod tests {
     use super::*;
 
+    use std::time::Duration;
+
     fn entry(name: &str, kind: EntryKind) -> Entry {
+        modified_entry(name, kind, 0)
+    }
+
+    /// An entry that was modified the given number of seconds after the epoch.
+    fn modified_entry(name: &str, kind: EntryKind, seconds: u64) -> Entry {
         Entry {
             name: name.to_string(),
             path: PathBuf::from(name),
             kind,
+            modified: SystemTime::UNIX_EPOCH + Duration::from_secs(seconds),
         }
     }
 
@@ -135,5 +145,20 @@ mod tests {
         sort_entries(&mut entries, SortOrder::NameDescending);
 
         assert_eq!(names(&entries), ["y", "x", "B.txt", "a.txt"]);
+    }
+
+    // 更新日の昇順では、古いものから並ぶ。フォルダはファイルより前のままである。
+    #[test]
+    fn modified_ascending_puts_older_entries_first() {
+        let mut entries = vec![
+            modified_entry("a.txt", EntryKind::File, 30),
+            modified_entry("b.txt", EntryKind::File, 10),
+            modified_entry("x", EntryKind::Folder, 20),
+            modified_entry("y", EntryKind::Folder, 5),
+        ];
+
+        sort_entries(&mut entries, SortOrder::ModifiedAscending);
+
+        assert_eq!(names(&entries), ["y", "x", "b.txt", "a.txt"]);
     }
 }
