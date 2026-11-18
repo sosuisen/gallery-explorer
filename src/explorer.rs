@@ -248,9 +248,11 @@ impl Explorer {
     }
 
     /// Moves to the favorite in `row` of the list of favorites.
+    /// Favorites hold pictures to look at, so they open in the grid.
     pub fn open_favorite(&mut self, row: usize) {
         let path = self.favorites.paths()[row].clone();
         self.navigate(&path);
+        self.view_mode = ViewMode::Grid;
     }
 
     /// Puts the favorites in the order the user dragged them into, and saves it.
