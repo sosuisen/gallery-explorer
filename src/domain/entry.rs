@@ -165,4 +165,19 @@ mod tests {
 
         assert_eq!(names(&entries), ["y", "x", "b.txt", "a.txt"]);
     }
+
+    // 更新日の降順では、新しいものから並ぶ。フォルダはファイルより前のままである。
+    #[test]
+    fn modified_descending_puts_newer_entries_first() {
+        let mut entries = vec![
+            modified_entry("a.txt", EntryKind::File, 10),
+            modified_entry("b.txt", EntryKind::File, 30),
+            modified_entry("x", EntryKind::Folder, 5),
+            modified_entry("y", EntryKind::Folder, 20),
+        ];
+
+        sort_entries(&mut entries, SortOrder::ModifiedDescending);
+
+        assert_eq!(names(&entries), ["y", "x", "b.txt", "a.txt"]);
+    }
 }
