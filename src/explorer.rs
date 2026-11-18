@@ -29,6 +29,7 @@ pub struct Explorer {
     thumbnails: HashMap<PathBuf, Arc<[u8]>>,
     selected: Option<usize>,
     view_mode: ViewMode,
+    sort_order: SortOrder,
     error: Option<String>,
     favorites: Favorites,
     store: FavoritesStore,
@@ -54,6 +55,7 @@ impl Explorer {
             thumbnails: HashMap::new(),
             selected: None,
             view_mode: ViewMode::List,
+            sort_order: SortOrder::default(),
             error: None,
             favorites,
             store,
@@ -95,10 +97,22 @@ impl Explorer {
     }
 
     pub fn sort_order(&self) -> SortOrder {
-        SortOrder::NameAscending
+        self.sort_order
     }
 
-    pub fn set_sort_order(&mut self, order: SortOrder) {}
+    /// Sorts the items again in `order`. The selected item stays selected.
+    pub fn set_sort_order(&mut self, order: SortOrder) {
+        self.sort_order = order;
+        let selected = self
+            .selected
+            .and_then(|row| self.entries.get(row))
+            .map(|entry| entry.path.clone());
+        // The rows move, so a press before the change must not pair with one after it.
+        self.clicks.reset();
+        sort_entries(&mut self.entries, order);
+        self.selected =
+            selected.and_then(|path| self.entries.iter().position(|entry| entry.path == path));
+    }
 
     /// The folders in the current folder. Their covers are looked up from these.
     pub fn folders(&self) -> Vec<PathBuf> {
