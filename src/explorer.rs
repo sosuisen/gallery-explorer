@@ -502,6 +502,23 @@ mod tests {
         assert_eq!(explorer.sort_order(), SortOrder::NameDescending);
     }
 
+    // フォルダを移っても、表示順は変わらない。読み直しても変わらない。
+    #[test]
+    fn sort_order_stays_after_moving_and_refreshing() {
+        let folder = sample();
+        fs::write(folder.path().join("a.jpg"), "").unwrap();
+        let mut explorer = open(&folder);
+        explorer.set_sort_order(SortOrder::NameDescending);
+
+        explorer.navigate(&folder.path().join("photos"));
+        explorer.go_up();
+        assert_eq!(names(&explorer), ["photos", "note.txt", "a.jpg"]);
+
+        fs::write(folder.path().join("b.jpg"), "").unwrap();
+        explorer.refresh();
+        assert_eq!(names(&explorer), ["photos", "note.txt", "b.jpg", "a.jpg"]);
+    }
+
     // 前に項目が増えても、選択していた項目は選択されたままである。
     #[test]
     fn selected_item_stays_selected_when_an_item_is_added_before_it() {
