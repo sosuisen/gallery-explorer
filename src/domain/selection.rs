@@ -16,6 +16,9 @@ pub fn move_selection(
     columns: usize,
     arrow: Arrow,
 ) -> Option<usize> {
+    if count == 0 {
+        return None;
+    }
     match (selected, arrow) {
         (None, _) => Some(0),
         (Some(row), Arrow::Up) if row >= columns => Some(row - columns),
