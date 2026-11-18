@@ -52,4 +52,12 @@ mod tests {
         assert_eq!(move_selection(Some(2), 5, 1, Arrow::Up), Some(1));
         assert_eq!(move_selection(Some(0), 5, 1, Arrow::Up), Some(0));
     }
+
+    // 1行に複数の項目が並ぶときは、上下キーで、真上と真下の項目が選ばれる。
+    #[test]
+    fn up_and_down_move_by_one_row_of_several_items() {
+        assert_eq!(move_selection(Some(1), 10, 4, Arrow::Down), Some(5));
+        assert_eq!(move_selection(Some(5), 10, 4, Arrow::Up), Some(1));
+        assert_eq!(move_selection(Some(2), 10, 4, Arrow::Up), Some(2));
+    }
 }
