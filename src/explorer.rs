@@ -108,6 +108,13 @@ impl Explorer {
         self.replace_entries(entries);
     }
 
+    /// Reads a folder, sorted in the chosen order.
+    fn read_sorted(&self, path: &Path) -> std::io::Result<Vec<Entry>> {
+        let mut entries = read_folder(path)?;
+        sort_entries(&mut entries, self.sort_order);
+        Ok(entries)
+    }
+
     /// Shows new items in place of the old ones. The selected item stays selected while it is
     /// still there.
     fn replace_entries(&mut self, entries: Vec<Entry>) {
@@ -180,7 +187,7 @@ impl Explorer {
 
     /// Shows the items of `path`. On failure, the current folder stays and the error is kept.
     pub fn navigate(&mut self, path: &Path) {
-        match read_folder(path) {
+        match self.read_sorted(path) {
             Ok(entries) => {
                 self.current = path.to_path_buf();
                 self.entries = entries;
@@ -198,7 +205,7 @@ impl Explorer {
     ///
     /// When the folder cannot be read any more, the list becomes empty and the error is kept.
     pub fn refresh(&mut self) {
-        match read_folder(&self.current) {
+        match self.read_sorted(&self.current) {
             Ok(entries) => self.replace_entries(entries),
             Err(error) => {
                 self.entries.clear();
