@@ -20,6 +20,8 @@ linker = "rust-lld.exe"
 # - src/infra/shell.rs: the call that opens a file with its default app
 # - src/infra/shell_thumbnail.rs (since 2026-11-18): the calls that ask the Windows shell for a
 #   thumbnail. The result depends on the thumbnail handlers installed on the machine.
+# - src/infra/app_icon.rs (since 2026-11-19): the calls that give the window the icon in the exe.
+#   They need a window and the icon resource that build.rs embeds.
 # cargo-mutants skips the same files; see .cargo/mutants.toml.
 [alias]
-cov = 'llvm-cov --ignore-filename-regex src[/\\](main|ui|infra[/\\]shell|infra[/\\]shell_thumbnail)\.rs$'
+cov = 'llvm-cov --ignore-filename-regex src[/\\](main|ui|infra[/\\]shell|infra[/\\]shell_thumbnail|infra[/\\]app_icon)\.rs$'
