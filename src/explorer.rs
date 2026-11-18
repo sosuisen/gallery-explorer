@@ -247,7 +247,11 @@ impl Explorer {
         self.save_favorites();
     }
 
-    pub fn reorder_favorites(&mut self, order: Vec<PathBuf>) {}
+    /// Puts the favorites in the order the user dragged them into, and saves it.
+    pub fn reorder_favorites(&mut self, order: Vec<PathBuf>) {
+        self.favorites.reorder(order);
+        self.save_favorites();
+    }
 
     pub fn report_error(&mut self, message: String) {
         self.error = Some(message);
