@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::domain::{DoubleClick, Entry, Favorites, Tree, TreeRow, resolve_crumb};
+use crate::domain::{
+    DoubleClick, Entry, Favorites, SortOrder, Tree, TreeRow, resolve_crumb, sort_entries,
+};
 use crate::infra::{FavoritesStore, child_folders, read_folder};
 
 /// How the items of the current folder are shown.
@@ -91,6 +93,12 @@ impl Explorer {
             ViewMode::Grid => ViewMode::List,
         };
     }
+
+    pub fn sort_order(&self) -> SortOrder {
+        SortOrder::NameAscending
+    }
+
+    pub fn set_sort_order(&mut self, order: SortOrder) {}
 
     /// The folders in the current folder. Their covers are looked up from these.
     pub fn folders(&self) -> Vec<PathBuf> {
@@ -465,6 +473,21 @@ mod tests {
         explorer.refresh();
 
         assert_eq!(names(&explorer), ["photos"]);
+    }
+
+    // 表示順を変えると、今のフォルダの項目が並び直る。選択していた項目は選択されたままである。
+    #[test]
+    fn changing_the_sort_order_sorts_the_items_again_and_keeps_the_selection() {
+        let folder = sample();
+        fs::write(folder.path().join("a.jpg"), "").unwrap();
+        let mut explorer = open(&folder);
+        explorer.press_row(2, Instant::now());
+
+        explorer.set_sort_order(SortOrder::NameDescending);
+
+        assert_eq!(names(&explorer), ["photos", "note.txt", "a.jpg"]);
+        assert_eq!(explorer.selected(), Some(1));
+        assert_eq!(explorer.sort_order(), SortOrder::NameDescending);
     }
 
     // 前に項目が増えても、選択していた項目は選択されたままである。
