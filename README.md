@@ -1,5 +1,7 @@
 # GalleryExplorer
 
+windows-reactor https://github.com/microsoft/windows-rs/tree/master/crates/libs/reactor の実証試験です。
+
 A file explorer for Windows with favorites. It is written in Rust with
 [windows-reactor](https://crates.io/crates/windows-reactor), a declarative WinUI 3 library.
 
