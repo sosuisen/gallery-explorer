@@ -8,14 +8,13 @@ use windows_reactor::*;
 
 use crate::domain::{Entry, TreeRow, crumbs, display_name};
 use crate::explorer::{Explorer, ViewMode};
-use crate::infra::{FavoritesStore, drives, open_with_default_app};
+use crate::infra::{Changes, FavoritesStore, FolderWatcher, drives, open_with_default_app};
 
 const SIDE_WIDTH: f64 = 300.0;
 const TREE_INDENT: f64 = 16.0;
 // A gray with low alpha shows on both the light and the dark theme.
 const SELECTED_BACKGROUND: Color = Color::argb(0x28, 0x80, 0x80, 0x80);
-// The size of one grid cell. It includes the margin around the tile.
-// The width is the thumbnail plus the tile's margin, border and padding. The height also holds
+// The size of one grid cell. The width is the thumbnail plus the tile's margin, border and padding. The height also holds
 // the name.
 const TILE_WIDTH: f64 = 136.0;
 const TILE_HEIGHT: f64 = 132.0;
@@ -34,46 +33,46 @@ pub enum Message {
     ToggleFavorite,
     RemoveFavorite(PathBuf),
     ToggleViewMode,
+    /// The watched folder changed.
+    FolderChanged(PathBuf),
+    /// A wait for changes ended without a change.
+    WatchEnded,
 }
 
 pub struct ExplorerWindow {
     explorer: Explorer,
+    watch: Option<Watch>,
+}
+
+/// The watch of the current folder and the background task that waits for its changes.
+struct Watch {
+    folder: PathBuf,
+    // None when the folder cannot be watched. The list then works without live updates.
+    watcher: Option<FolderWatcher>,
+    task: Option<ComponentTask>,
 }
 
 impl Component for ExplorerWindow {
     type Input = ();
     type Message = Message;
 
-    fn create(_input: &(), _context: &ComponentContext<Self>) -> Self {
+    fn create(_input: &(), context: &ComponentContext<Self>) -> Self {
         let roots = drives();
         let start = env::var_os("USERPROFILE")
             .map(PathBuf::from)
             .or_else(|| roots.first().cloned())
             .unwrap_or_default();
-        Self {
+        let mut window = Self {
             explorer: Explorer::open(roots, &start, FavoritesStore::in_app_data()),
-        }
+            watch: None,
+        };
+        window.watch_current_folder(context);
+        window
     }
 
-    fn update(&mut self, message: Message, _context: &ComponentContext<Self>) {
-        let explorer = &mut self.explorer;
-        match message {
-            Message::Navigate(path) => explorer.navigate(&path),
-            Message::Up => explorer.go_up(),
-            Message::CrumbClicked(label) => explorer.crumb_clicked(&label),
-            Message::ToggleTree(path) => explorer.toggle_tree(&path),
-            Message::OpenTreeFolder(path) => explorer.open_tree_folder(&path),
-            Message::RowPressed(row, at) => {
-                if let Some(file) = explorer.press_row(row, at)
-                    && let Err(error) = open_with_default_app(&file)
-                {
-                    explorer.report_error(format!("{}を開けません: {error}", file.display()));
-                }
-            }
-            Message::ToggleFavorite => explorer.toggle_favorite(),
-            Message::RemoveFavorite(path) => explorer.remove_favorite(&path),
-            Message::ToggleViewMode => explorer.toggle_view_mode(),
-        }
+    fn update(&mut self, message: Message, context: &ComponentContext<Self>) {
+        self.handle(message, context);
+        self.watch_current_folder(context);
     }
 
     fn view(&self, _input: &(), context: &mut ViewContext<Self>) -> View {
@@ -96,6 +95,63 @@ impl Component for ExplorerWindow {
 }
 
 impl ExplorerWindow {
+    fn handle(&mut self, message: Message, context: &ComponentContext<Self>) {
+        let explorer = &mut self.explorer;
+        match message {
+            Message::Navigate(path) => explorer.navigate(&path),
+            Message::Up => explorer.go_up(),
+            Message::CrumbClicked(label) => explorer.crumb_clicked(&label),
+            Message::ToggleTree(path) => explorer.toggle_tree(&path),
+            Message::OpenTreeFolder(path) => explorer.open_tree_folder(&path),
+            Message::RowPressed(row, at) => {
+                if let Some(file) = explorer.press_row(row, at)
+                    && let Err(error) = open_with_default_app(&file)
+                {
+                    explorer.report_error(format!("{}を開けません: {error}", file.display()));
+                }
+            }
+            Message::ToggleFavorite => explorer.toggle_favorite(),
+            Message::RemoveFavorite(path) => explorer.remove_favorite(&path),
+            Message::ToggleViewMode => explorer.toggle_view_mode(),
+            Message::FolderChanged(folder) => {
+                // A change of a folder that is no longer shown arrives late and is ignored.
+                if folder == explorer.current() {
+                    explorer.refresh();
+                }
+                if let Some(watch) = self.watch.as_mut().filter(|watch| watch.folder == folder)
+                    && let Some(watcher) = &watch.watcher
+                {
+                    watch.task = Some(wait_for_changes(watcher.changes(), folder, context));
+                }
+            }
+            Message::WatchEnded => {}
+        }
+    }
+
+    /// Watches the current folder when it is not watched yet, and stops watching the old one.
+    fn watch_current_folder(&mut self, context: &ComponentContext<Self>) {
+        let current = self.explorer.current();
+        if self
+            .watch
+            .as_ref()
+            .is_some_and(|watch| watch.folder == current)
+        {
+            return;
+        }
+        if let Some(task) = self.watch.take().and_then(|watch| watch.task) {
+            task.cancel();
+        }
+        let watcher = FolderWatcher::start(current).ok();
+        let task = watcher
+            .as_ref()
+            .map(|watcher| wait_for_changes(watcher.changes(), current.to_path_buf(), context));
+        self.watch = Some(Watch {
+            folder: current.to_path_buf(),
+            watcher,
+            task,
+        });
+    }
+
     fn toolbar(&self, context: &ViewContext<Self>) -> View {
         let explorer = &self.explorer;
         let (star, star_label) = if explorer.is_current_favorite() {
@@ -343,6 +399,21 @@ fn preview(entry: &Entry) -> View {
         ),
     };
     Grid::new().height(THUMBNAIL_HEIGHT).children((content,))
+}
+
+/// Waits on the thread pool, because the watcher's thread cannot send to the window.
+fn wait_for_changes(
+    changes: Changes,
+    folder: PathBuf,
+    context: &ComponentContext<ExplorerWindow>,
+) -> ComponentTask {
+    context.spawn_background(move |token| {
+        if changes.wait(|| token.is_cancelled()) {
+            Message::FolderChanged(folder)
+        } else {
+            Message::WatchEnded
+        }
+    })
 }
 
 fn entry_symbol(entry: &Entry) -> Symbol {
