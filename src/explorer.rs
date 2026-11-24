@@ -329,6 +329,19 @@ impl Explorer {
         self.selection.add(row);
     }
 
+    /// Selects the rows from the anchor to the pressed row, and nothing else. The anchor is the
+    /// row last pressed without Shift.
+    pub fn shift_press_row(&mut self, row: usize) {
+        self.on_release = None;
+        self.selection.select_range(row);
+    }
+
+    /// Adds the rows from the anchor to the pressed row to the selection.
+    pub fn ctrl_shift_press_row(&mut self, row: usize) {
+        self.on_release = None;
+        self.selection.add_range(row);
+    }
+
     /// Starts a band at `point` on the empty space of the items. The selection is cleared.
     pub fn start_band(&mut self, point: Point) {
         self.selection = Selection::default();
