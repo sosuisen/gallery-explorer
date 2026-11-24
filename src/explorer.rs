@@ -382,28 +382,27 @@ impl Explorer {
     /// Moves the selection with a cursor key. columns is the number of tiles in one row of the
     /// grid.
     pub fn move_selection(&mut self, arrow: Arrow, columns: usize) {
-        let columns = match self.view_mode {
-            ViewMode::List if matches!(arrow, Arrow::Left | Arrow::Right) => return,
-            ViewMode::List => 1,
-            ViewMode::Grid => columns,
-        };
-        let moved = move_selection(self.selection.focus(), self.entries.len(), columns, arrow);
-        self.selection = Selection::new(moved, moved);
+        if let Some(moved) = self.moved_focus(arrow, columns) {
+            self.selection.select_only(moved);
+        }
     }
 
     /// Moves the focus with a cursor key, and selects the rows from the anchor to the new focus.
     /// columns is the number of tiles in one row of the grid.
     pub fn extend_selection(&mut self, arrow: Arrow, columns: usize) {
+        if let Some(moved) = self.moved_focus(arrow, columns) {
+            self.selection.select_range(moved);
+        }
+    }
+
+    /// The row that a cursor key moves the focus to. The list ignores left and right.
+    fn moved_focus(&self, arrow: Arrow, columns: usize) -> Option<usize> {
         let columns = match self.view_mode {
-            ViewMode::List if matches!(arrow, Arrow::Left | Arrow::Right) => return,
+            ViewMode::List if matches!(arrow, Arrow::Left | Arrow::Right) => return None,
             ViewMode::List => 1,
             ViewMode::Grid => columns,
         };
-        if let Some(moved) =
-            move_selection(self.selection.focus(), self.entries.len(), columns, arrow)
-        {
-            self.selection.select_range(moved);
-        }
+        move_selection(self.selection.focus(), self.entries.len(), columns, arrow)
     }
 
     /// Opens the selected item. A folder is shown. For a file, its path is returned, and the
