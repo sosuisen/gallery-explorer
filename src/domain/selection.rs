@@ -135,6 +135,31 @@ mod tests {
         assert_eq!(selection.focus(), Some(0));
     }
 
+    // 起点がないときに範囲を選ぶと、指定の行だけが選ばれ、そこが起点になる。
+    #[test]
+    fn range_without_an_anchor_selects_the_row_and_anchors_there() {
+        let mut selection = Selection::default();
+
+        selection.select_range(2);
+        assert_eq!(rows(&selection), [2]);
+
+        selection.select_range(4);
+        assert_eq!(rows(&selection), [2, 3, 4]);
+    }
+
+    // 範囲を加えると、起点から指定の行までが、前の選択に足される。
+    #[test]
+    fn adding_a_range_keeps_the_earlier_selection() {
+        let mut selection = Selection::default();
+        selection.select_only(0);
+        selection.add(4);
+
+        selection.add_range(6);
+
+        assert_eq!(rows(&selection), [0, 4, 5, 6]);
+        assert_eq!(selection.focus(), Some(6));
+    }
+
     // 加えると、前の選択に足される。
     #[test]
     fn adding_an_item_keeps_the_earlier_selection() {
