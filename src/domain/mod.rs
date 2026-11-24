@@ -8,6 +8,7 @@ mod favorites;
 mod selection;
 mod tree;
 
+pub use band::{ItemLayout, Point, Rect};
 pub use breadcrumb::{crumbs, display_name, resolve_crumb};
 pub use double_click::DoubleClick;
 pub use entry::{Entry, EntryKind, SortOrder, sort_entries};

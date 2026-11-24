@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::domain::{
-    Arrow, DoubleClick, Entry, Favorites, Selection, SortOrder, Tree, TreeRow, move_selection,
-    resolve_crumb, sort_entries,
+    Arrow, DoubleClick, Entry, Favorites, ItemLayout, Point, Rect, Selection, SortOrder, Tree,
+    TreeRow, move_selection, resolve_crumb, sort_entries,
 };
 use crate::infra::{FavoritesStore, child_folders, read_folder};
 
@@ -38,6 +38,23 @@ pub struct Explorer {
     clicks: DoubleClick,
     /// What the release of the pressed item does to the selection.
     on_release: Option<Release>,
+    /// The rectangle that the user is dragging over the items, if any.
+    band: Option<Band>,
+}
+
+/// A rectangle that the user drags over the items to select them.
+#[derive(Clone, Debug)]
+struct Band {
+    start: Point,
+    end: Point,
+    /// The selection before the band. The items under the band are added to it.
+    base: Selection,
+}
+
+impl Band {
+    fn rect(&self) -> Rect {
+        Rect::between(self.start, self.end)
+    }
 }
 
 /// A change of the selection that waits for the release of the pressed item.
@@ -77,6 +94,7 @@ impl Explorer {
             tree: Tree::default(),
             clicks: DoubleClick::default(),
             on_release: None,
+            band: None,
         };
         explorer.navigate(start);
         // The favorites error is the older one, but it would be lost behind a clean start.
@@ -289,6 +307,32 @@ impl Explorer {
             self.on_release = Some(Release::Remove(row));
         }
         self.selection.add(row);
+    }
+
+    /// Starts a band at `point` on the empty space of the items. The selection is cleared.
+    pub fn start_band(&mut self, point: Point) {
+        self.selection = Selection::default();
+        self.band = Some(Band {
+            start: point,
+            end: point,
+            base: Selection::default(),
+        });
+    }
+
+    /// Stretches the band to `point`. The items under it become selected. `layout` tells where
+    /// the items are.
+    pub fn move_band(&mut self, point: Point, layout: ItemLayout) {
+        let Some(band) = &mut self.band else {
+            return;
+        };
+        band.end = point;
+        let under = layout.items_in(band.rect(), self.entries.len());
+        self.selection = Selection::new(band.base.rows().chain(under), band.base.focus());
+    }
+
+    /// The rectangle of the band, while the user drags it.
+    pub fn band(&self) -> Option<Rect> {
+        self.band.as_ref().map(Band::rect)
     }
 
     /// Moves the selection with a cursor key. columns is the number of tiles in one row of the
