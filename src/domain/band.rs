@@ -32,6 +32,14 @@ impl Rect {
             bottom: a.y.max(b.y),
         }
     }
+
+    /// Whether the two rectangles share an area. Touching edges share none.
+    fn overlaps(&self, other: Rect) -> bool {
+        self.left < other.right
+            && other.left < self.right
+            && self.top < other.bottom
+            && other.top < self.bottom
+    }
 }
 
 /// Where the items lie in their area.
@@ -87,16 +95,6 @@ impl ItemLayout {
             right: left + self.item_width,
             bottom: top + self.item_height,
         }
-    }
-}
-
-impl Rect {
-    /// Whether the two rectangles share an area. Touching edges share none.
-    fn overlaps(&self, other: Rect) -> bool {
-        self.left < other.right
-            && other.left < self.right
-            && self.top < other.bottom
-            && other.top < self.bottom
     }
 }
 
