@@ -56,12 +56,12 @@ pub enum Message {
     ToggleTree(PathBuf),
     OpenTreeFolder(PathBuf),
     RowPressed(usize, Instant),
-    /// A right press on a favorite or a tree row. It holds the path of the folder.
-    ShowFolderMenu(PathBuf),
+    /// A right press on a favorite, a tree row or the empty space of the list. It holds the path
+    /// of the file or the folder. Its menu has no delete.
+    ShowMenu(PathBuf),
     /// A right press on an item in the list or the grid. It holds the path and whether it is a
     /// folder.
     ShowItemMenu(PathBuf, bool),
-    ToggleFavorite,
     RemoveFavorite(PathBuf),
     /// The selection of the favorites changed. It holds the chosen row.
     FavoriteChosen(Option<usize>),
@@ -210,35 +210,21 @@ impl ExplorerWindow {
                 }
             }
             Message::WindowResized(width) => self.columns = grid_columns(width),
-            Message::ShowFolderMenu(path) => {
-                if popup_menu(&[OPEN_IN_EXPLORER]) == Some(0) {
-                    open_in_explorer(explorer, &path, true);
-                }
+            Message::ShowMenu(path) => {
+                let is_folder = path.is_dir();
+                show_context_menu(explorer, &path, is_folder, false);
             }
             Message::ShowItemMenu(path, is_folder) => {
-                match popup_menu(&[OPEN_IN_EXPLORER, DELETE]) {
-                    Some(0) => open_in_explorer(explorer, &path, is_folder),
-                    Some(1) => {
-                        // The folder watch removes the item from the list.
-                        if let Err(error) = move_to_recycle_bin(&path) {
-                            explorer.report_error(format!(
-                                "{}を削除できません: {error}",
-                                path.display()
-                            ));
-                        }
-                    }
-                    _ => {}
-                }
+                show_context_menu(explorer, &path, is_folder, true);
             }
-            Message::ToggleFavorite => explorer.toggle_favorite(),
             Message::RemoveFavorite(path) => explorer.remove_favorite(&path),
             // The view clears the selection again, so the same favorite can be chosen twice.
-            Message::FavoriteChosen(Some(row)) => {
-                explorer.open_favorite(row);
+            Message::FavoriteChosen(Some(row)) => match explorer.open_favorite(row) {
+                Some(file) => open_file(explorer, &file),
                 // The favorite may be the current folder. Moving there clears the covers, but
                 // no folder change loads them again, nor the thumbnails that the grid now needs.
-                self.load_previews(context);
-            }
+                None => self.load_previews(context),
+            },
             Message::FavoriteChosen(None) => {}
             Message::FavoritesReordered(keys) => {
                 explorer.reorder_favorites(keys.into_iter().map(PathBuf::from).collect())
@@ -332,11 +318,6 @@ impl ExplorerWindow {
 
     fn toolbar(&self, context: &ViewContext<Self>) -> View {
         let explorer = &self.explorer;
-        let (star, star_label) = if explorer.is_current_favorite() {
-            (Symbol::UnFavorite, "お気に入りから削除")
-        } else {
-            (Symbol::Favorite, "お気に入りに追加")
-        };
         // The button names the view that it switches to.
         let (view_icon, view_label) = match explorer.view_mode() {
             ViewMode::List => (Symbol::ViewAll, "グリッド"),
@@ -358,25 +339,20 @@ impl ExplorerWindow {
                 GridLength::Auto,
                 GridLength::Auto,
                 GridLength::Auto,
-                GridLength::Auto,
                 GridLength::STAR,
             ])
             .children((
                 Button::new()
                     .grid_column(0)
-                    .on_click(context.message(Message::ToggleFavorite))
-                    .content(icon_label(star, star_label)),
-                Button::new()
-                    .grid_column(1)
                     .is_enabled(explorer.current().parent().is_some())
                     .on_click(context.message(Message::Up))
                     .content(icon_label(Symbol::Up, "上へ")),
                 Button::new()
-                    .grid_column(2)
+                    .grid_column(1)
                     .on_click(context.message(Message::ToggleViewMode))
                     .content(icon_label(view_icon, view_label)),
                 ComboBox::new()
-                    .grid_column(3)
+                    .grid_column(2)
                     // A fixed width keeps the breadcrumb still when the chosen label changes.
                     .width(SORT_MENU_WIDTH)
                     .vertical_alignment(VerticalAlignment::Center)
@@ -384,7 +360,7 @@ impl ExplorerWindow {
                     .selected_index(sort_row)
                     .on_selection_changed(context.callback(Message::SortChosen)),
                 BreadcrumbBar::new()
-                    .grid_column(4)
+                    .grid_column(3)
                     .vertical_alignment(VerticalAlignment::Center)
                     .items_source(labels)
                     .on_item_clicked(context.callback(Message::CrumbClicked)),
@@ -519,7 +495,7 @@ fn favorite_row(path: &Path, context: &ViewContext<ExplorerWindow>) -> View {
                 .vertical_alignment(VerticalAlignment::Stretch)
                 // A border without a background receives no pointer events.
                 .background(Color::transparent())
-                .on_pointer_pressed(folder_menu_handler(path, context))
+                .on_pointer_pressed(menu_handler(path, context))
                 .content(icon_label(Symbol::SolidStar, display_name(path))),
             Button::new()
                 .grid_column(1)
@@ -557,13 +533,41 @@ fn tree_row(row: &TreeRow, context: &ViewContext<ExplorerWindow>) -> View {
             .content(TextBlock::new().text(arrow).font_size(10.0)),
     ));
     Border::new()
-        .on_pointer_pressed(folder_menu_handler(&row.path, context))
+        .on_pointer_pressed(menu_handler(&row.path, context))
         .content(row_view)
 }
 
 /// The items of the context menus.
 const OPEN_IN_EXPLORER: &str = "エクスプローラーで開く";
+const ADD_FAVORITE: &str = "お気に入りに追加";
+const REMOVE_FAVORITE: &str = "お気に入りから外す";
 const DELETE: &str = "削除";
+
+/// Shows the context menu of a file or a folder, and does what the user chose. Only the items
+/// in the list and the grid can be deleted.
+fn show_context_menu(explorer: &mut Explorer, path: &Path, is_folder: bool, can_delete: bool) {
+    let favorite = if explorer.is_favorite(path) {
+        REMOVE_FAVORITE
+    } else {
+        ADD_FAVORITE
+    };
+    let items: &[&str] = if can_delete {
+        &[OPEN_IN_EXPLORER, favorite, DELETE]
+    } else {
+        &[OPEN_IN_EXPLORER, favorite]
+    };
+    match popup_menu(items) {
+        Some(0) => open_in_explorer(explorer, path, is_folder),
+        Some(1) => explorer.toggle_favorite(path),
+        Some(2) => {
+            // The folder watch removes the item from the list.
+            if let Err(error) = move_to_recycle_bin(path) {
+                explorer.report_error(format!("{}を削除できません: {error}", path.display()));
+            }
+        }
+        _ => {}
+    }
+}
 
 fn open_in_explorer(explorer: &mut Explorer, path: &Path, is_folder: bool) {
     if let Err(error) = show_in_explorer(path, is_folder) {
@@ -837,13 +841,13 @@ fn background_menu_handler(
     let folder = folder.to_path_buf();
     move |pointer: PointerEventInfo| {
         if pointer.is_right_button_pressed && !ITEM_MENU_ASKED.replace(false) {
-            sender.send(Message::ShowFolderMenu(folder.clone()));
+            sender.send(Message::ShowMenu(folder.clone()));
         }
     }
 }
 
-/// A right press on a favorite or a tree row asks for the context menu of its folder.
-fn folder_menu_handler(
+/// A right press on a favorite or a tree row asks for the context menu of its file or folder.
+fn menu_handler(
     path: &Path,
     context: &ViewContext<ExplorerWindow>,
 ) -> impl Fn(PointerEventInfo) + use<> {
@@ -851,7 +855,7 @@ fn folder_menu_handler(
     let path = path.to_path_buf();
     move |pointer: PointerEventInfo| {
         if pointer.is_right_button_pressed {
-            sender.send(Message::ShowFolderMenu(path.clone()));
+            sender.send(Message::ShowMenu(path.clone()));
         }
     }
 }

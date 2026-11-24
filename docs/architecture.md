@@ -9,7 +9,7 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 
 | 場所 | 内容 |
 |---|---|
-| 上 | 左から、お気に入りの追加と削除のボタン、「上へ」ボタン、一覧とグリッドの切り替えボタン、パンくず |
+| 上 | 左から、「上へ」ボタン、一覧とグリッドの切り替えボタン、表示順のメニュー、パンくず |
 | 左 | お気に入りの一覧、フォルダのツリー |
 | 右 | 今のフォルダの中身。一覧か、サムネイルのグリッドで示す |
 | 下 | 項目の数、またはエラーの文 |
@@ -139,12 +139,14 @@ Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほ
 ### 右クリックメニュー
 
 1. 一覧の行とグリッドのタイルの`Border`は、右ボタンの押下で`Message::ShowItemMenu(パス, フォルダか)`を送る。
-   お気に入りの行とツリーの行は、`folder_menu_handler`で`Message::ShowFolderMenu(パス)`を送る。
-   一覧とグリッドの項目のない場所は、`background_menu_handler`で、今のフォルダの`Message::ShowFolderMenu`を送る。
-2. `update`が`popup_menu`を呼ぶ。`popup_menu`は、マウスカーソルの位置にWin32のメニューを出し、選ばれた項目の番号を返す。
+   お気に入りの行とツリーの行は、`menu_handler`で`Message::ShowMenu(パス)`を送る。
+   一覧とグリッドの項目のない場所は、`background_menu_handler`で、今のフォルダの`Message::ShowMenu`を送る。
+2. `update`が`show_context_menu`を呼び、`show_context_menu`が`popup_menu`を呼ぶ。`popup_menu`は、マウスカーソルの位置にWin32のメニューを出し、選ばれた項目の番号を返す。
    メニューが閉じるまで、`TrackPopupMenu`の中でメッセージループが回る。
 3. 「エクスプローラーで開く」が選ばれると、`show_in_explorer`がエクスプローラーで開く。
-4. 一覧とグリッドのメニューには「削除」もある。選ばれると、`move_to_recycle_bin`がごみ箱へ移す。
+4. 2番目の項目は、パスがお気に入りなら「お気に入りから外す」、そうでなければ「お気に入りに追加」である。
+   選ばれると、`Explorer::toggle_favorite`が切り替えて保存する。
+5. 一覧とグリッドのメニューには「削除」もある。選ばれると、`move_to_recycle_bin`がごみ箱へ移す。
    一覧からは、フォルダの監視が消す。
    お気に入りとツリーのメニューには「削除」を出さない。
 
@@ -175,13 +177,14 @@ Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほ
 ファイルの一覧と違って`ListView`を使うのは、WinUIのドラッグでの並べ替え（`CanReorderItems`）を使うためである。
 項目が変わるときのアニメーションは消せないが、お気に入りはめったに変わらないので問題にならない。
 
-1. 各`ListViewItem`の`tag`に、フォルダのパスの文字列を入れる。
+1. 各`ListViewItem`の`tag`に、ファイルかフォルダのパスの文字列を入れる。
 2. ドラッグが終わると、`ListView`が`on_reordered`で、新しい順序の`tag`を返す。`ui`はこれを`Message::FavoritesReordered`にする。
 3. `Explorer::reorder_favorites`が、`Favorites::reorder`で並べ直し、`FavoritesStore::save`で保存する。
 
 行の名前の部分は、`Button`にしない。`Button`が押下を受け取ると、ドラッグが始まらないためである。
-その代わりに、行を選ぶと`Message::FavoriteChosen(行)`が届き、`Explorer::open_favorite`がそのフォルダへ移る。
-`open_favorite`は、表示をグリッドにし、表示順を更新日の降順にする。
+その代わりに、行を選ぶと`Message::FavoriteChosen(行)`が届き、`Explorer::open_favorite`を呼ぶ。
+お気に入りがファイルなら、`open_favorite`はそのパスを返し、`ui`が`open_with_default_app`で開く。今のフォルダ、表示、表示順は変えない。
+お気に入りがフォルダなら、`open_favorite`はそのフォルダへ移り、表示をグリッドにし、表示順を更新日の降順にする。
 表示順はフォルダへ移る前に変えるので、お気に入りのフォルダは最初から更新日の降順で読まれる。
 そのあと`ui`は、`load_previews`で表紙とサムネイルを読み込み直す。
 お気に入りが今のフォルダと同じだと、フォルダの変化がないので、表紙もサムネイルも自動では読み込まれないためである。

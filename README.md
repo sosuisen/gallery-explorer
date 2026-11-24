@@ -16,7 +16,8 @@ crates.io. The copy adds dragging files to other apps. The changes are listed in
 - A folder tree with the drives at the top.
 - A list of the items in the current folder.
 - A breadcrumb bar and an "up" button.
-- Favorites: add the current folder, remove it, and jump to it. Drag them up or down to reorder
+- Favorites: add a file or a folder from the right-click menu, and remove it. Choose a favorite
+  folder to jump to it, or a favorite file to open it. Drag them up or down to reorder
   them. They are kept between runs.
 - A double click opens a folder in the list, or opens a file with its default app.
 - The cursor keys move the selection. The list uses the up and down keys, and the grid uses all
