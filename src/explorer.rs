@@ -369,6 +369,15 @@ mod tests {
         Explorer::open(vec![folder.path().to_path_buf()], folder.path(), store)
     }
 
+    /// A folder with empty files of the given names.
+    fn files<const N: usize>(names: [&str; N]) -> TempDir {
+        let folder = tempfile::tempdir().unwrap();
+        for name in names {
+            fs::write(folder.path().join(name), "").unwrap();
+        }
+        folder
+    }
+
     fn names(explorer: &Explorer) -> Vec<&str> {
         explorer
             .entries()
@@ -680,6 +689,35 @@ mod tests {
         explorer.ctrl_press_row(1);
 
         assert_eq!(explorer.selected_rows(), [0, 1]);
+    }
+
+    // 押した項目だけが選ばれる。Ctrlで選んだ項目も、選択から外れる。
+    #[test]
+    fn press_selects_only_the_pressed_item() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(1);
+
+        explorer.press_row(2, Instant::now());
+
+        assert_eq!(explorer.selected_rows(), [2]);
+    }
+
+    // 複数を選んだまま選択された項目を押しても、選択は変わらない。離すと、その項目だけが選ばれる。
+    // 押したまま、選択されたすべての項目をドラッグできるようにするためである。
+    #[test]
+    fn press_on_a_selected_item_keeps_the_selection_until_release() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(1);
+
+        explorer.press_row(1, Instant::now());
+        assert_eq!(explorer.selected_rows(), [0, 1]);
+
+        explorer.release_row(1);
+        assert_eq!(explorer.selected_rows(), [1]);
     }
 
     // 一覧では、グリッドの列の数によらず、下キーで次の行が選ばれる。
