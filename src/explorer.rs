@@ -110,7 +110,8 @@ impl Explorer {
         &self.entries
     }
 
-    pub fn selected(&self) -> Option<usize> {
+    /// The selected row that the cursor keys move from, and that Enter opens.
+    pub fn focus(&self) -> Option<usize> {
         self.selection.focus()
     }
 
@@ -665,7 +666,7 @@ mod tests {
         explorer.set_sort_order(SortOrder::NameDescending);
 
         assert_eq!(names(&explorer), ["photos", "note.txt", "a.jpg"]);
-        assert_eq!(explorer.selected(), Some(1));
+        assert_eq!(explorer.selected_rows(), [1]);
         assert_eq!(explorer.sort_order(), SortOrder::NameDescending);
     }
 
@@ -696,8 +697,9 @@ mod tests {
 
         explorer.refresh();
 
-        let selected = explorer.selected().unwrap();
-        assert_eq!(explorer.entries()[selected].name, "note.txt");
+        assert_eq!(explorer.selected_rows(), [2]);
+        assert_eq!(explorer.entries()[2].name, "note.txt");
+        assert_eq!(explorer.focus(), Some(2));
     }
 
     // 読み直しても、選択された項目はすべて選択されたままである。
@@ -737,7 +739,7 @@ mod tests {
 
         explorer.refresh();
 
-        assert_eq!(explorer.selected(), None);
+        assert_eq!(explorer.selected_rows(), Vec::<usize>::new());
     }
 
     // 読み直しの前後の押下は、ダブルクリックにならない。
@@ -766,7 +768,7 @@ mod tests {
         explorer.refresh();
 
         assert!(explorer.entries().is_empty());
-        assert_eq!(explorer.selected(), None);
+        assert_eq!(explorer.selected_rows(), Vec::<usize>::new());
         assert!(explorer.error().is_some());
     }
 
@@ -793,7 +795,7 @@ mod tests {
         assert_eq!(opened, None);
         assert_eq!(explorer.current(), folder.path().join("photos"));
         assert_eq!(names(&explorer), ["inner"]);
-        assert_eq!(explorer.selected(), None);
+        assert_eq!(explorer.selected_rows(), Vec::<usize>::new());
     }
 
     // ファイルをダブルクリックすると、開くファイルのパスが返り、フォルダは変わらない。
@@ -816,7 +818,7 @@ mod tests {
 
         explorer.press_row(1, Instant::now());
 
-        assert_eq!(explorer.selected(), Some(1));
+        assert_eq!(explorer.selected_rows(), [1]);
     }
 
     // Ctrlで押すと、項目が選択に加わる。
@@ -984,7 +986,7 @@ mod tests {
 
         explorer.move_selection(Arrow::Down, 4);
 
-        assert_eq!(explorer.selected(), Some(1));
+        assert_eq!(explorer.selected_rows(), [1]);
     }
 
     // 選ばれたフォルダを開くと、そのフォルダの中身が並ぶ。
@@ -1022,7 +1024,7 @@ mod tests {
 
         explorer.move_selection(Arrow::Right, 1);
 
-        assert_eq!(explorer.selected(), Some(0));
+        assert_eq!(explorer.selected_rows(), [0]);
     }
 
     // グリッドでは、下キーで、1行の列の数だけ後の項目が選ばれる。
@@ -1038,7 +1040,7 @@ mod tests {
 
         explorer.move_selection(Arrow::Down, 2);
 
-        assert_eq!(explorer.selected(), Some(2));
+        assert_eq!(explorer.selected_rows(), [2]);
     }
 
     // 起動したときは、一覧で表示される。

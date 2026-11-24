@@ -432,7 +432,7 @@ impl ExplorerWindow {
     // left-aligned container, so a row cannot fill the width.
     // The grid uses a VariableSizedWrapGrid instead of a GridView for the same reason.
     fn file_list(&self, context: &ViewContext<Self>) -> View {
-        let selected = self.explorer.selected();
+        let selected = self.explorer.focus();
         let mode = self.explorer.view_mode();
         let items = self
             .explorer
