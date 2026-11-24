@@ -36,6 +36,18 @@ pub struct Explorer {
     store: FavoritesStore,
     tree: Tree,
     clicks: DoubleClick,
+    /// What the release of the pressed item does to the selection.
+    on_release: Option<Release>,
+}
+
+/// A change of the selection that waits for the release of the pressed item.
+///
+/// A press on a selected item may start a drag of all the selected items, so the selection must
+/// not change before the drag.
+#[derive(Clone, Copy, Debug)]
+enum Release {
+    /// Selects only this row.
+    SelectOnly(usize),
 }
 
 impl Explorer {
@@ -62,6 +74,7 @@ impl Explorer {
             store,
             tree: Tree::default(),
             clicks: DoubleClick::default(),
+            on_release: None,
         };
         explorer.navigate(start);
         // The favorites error is the older one, but it would be lost behind a clean start.
@@ -238,14 +251,32 @@ impl Explorer {
 
     /// Records a press on a list row. The pressed row becomes the selected row.
     ///
+    /// A press on a selected row keeps the other selected rows until `release_row`, because the
+    /// press may start a drag of all of them.
+    ///
     /// A double click on a folder shows that folder. A double click on a file returns its path,
     /// and the caller opens it.
     pub fn press_row(&mut self, row: usize, at: Instant) -> Option<PathBuf> {
-        self.selection.select_only(row);
+        if self.selection.contains(row) {
+            // This only moves the focus.
+            self.selection.add(row);
+            self.on_release = Some(Release::SelectOnly(row));
+        } else {
+            self.selection.select_only(row);
+        }
         if !self.clicks.press(row, at) {
             return None;
         }
         self.open_selected()
+    }
+
+    /// Records the release of the left button on a row. It finishes what the press on that row
+    /// left for the release.
+    pub fn release_row(&mut self, row: usize) {
+        match self.on_release.take() {
+            Some(Release::SelectOnly(pressed)) if pressed == row => self.selection.select_only(row),
+            _ => {}
+        }
     }
 
     /// Adds the pressed row to the selection.
