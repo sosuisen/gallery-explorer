@@ -92,4 +92,16 @@ mod tests {
 
         assert_eq!(layout.items_in(rect, 5), [1, 2]);
     }
+
+    // グリッドでは、矩形と重なるタイルが選ばれる。
+    #[test]
+    fn grid_tiles_that_overlap_the_rectangle_are_in_it() {
+        // Three tiles of 10px by 20px in a row, below and right of a margin of 4px:
+        //   0: 4..14   1: 14..24   2: 24..34   (x)   row 0: 4..24 (y)
+        //   3          4           5                 row 1: 24..44
+        let layout = ItemLayout::grid(4.0, 3, 10.0, 20.0);
+        let rect = Rect::between(Point::new(20.0, 30.0), Point::new(26.0, 50.0));
+
+        assert_eq!(layout.items_in(rect, 7), [4, 5]);
+    }
 }
