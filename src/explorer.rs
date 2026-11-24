@@ -890,6 +890,20 @@ mod tests {
         assert_eq!(explorer.selected_rows(), [0, 1]);
     }
 
+    // 選択された項目をCtrlで押してドラッグしたあと、別の項目の上で離しても、選択は変わらない。
+    #[test]
+    fn release_on_another_item_after_a_ctrl_drag_keeps_the_selection() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(1);
+        explorer.ctrl_press_row(1);
+
+        explorer.release_row(2);
+
+        assert_eq!(explorer.selected_rows(), [0, 1]);
+    }
+
     // 押下で残した変更は、次の押下で捨てられる。ドラッグのあとで別の項目を選んでから、ドラッグした項目の
     // 上で離しても、選択は変わらない。
     #[test]
