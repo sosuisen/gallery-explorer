@@ -840,6 +840,19 @@ mod tests {
         assert_eq!(open(&folder).favorites(), [folder.path().join("photos")]);
     }
 
+    // ファイルをお気に入りに追加すると、次の起動でも残っている。
+    #[test]
+    fn favorite_file_is_still_there_on_the_next_open() {
+        let folder = sample();
+        let note = folder.path().join("note.txt");
+        let mut explorer = open(&folder);
+
+        explorer.toggle_favorite(&note);
+
+        assert!(explorer.is_favorite(&note));
+        assert_eq!(open(&folder).favorites(), [note]);
+    }
+
     // お気に入りのフォルダでもう一度切り替えると、お気に入りから外れる。
     #[test]
     fn toggling_again_in_a_favorite_folder_removes_it() {
