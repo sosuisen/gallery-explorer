@@ -48,6 +48,8 @@ pub struct Explorer {
 enum Release {
     /// Selects only this row.
     SelectOnly(usize),
+    /// Takes this row out of the selection.
+    Remove(usize),
 }
 
 impl Explorer {
@@ -275,12 +277,17 @@ impl Explorer {
     pub fn release_row(&mut self, row: usize) {
         match self.on_release.take() {
             Some(Release::SelectOnly(pressed)) if pressed == row => self.selection.select_only(row),
+            Some(Release::Remove(pressed)) if pressed == row => self.selection.remove(row),
             _ => {}
         }
     }
 
-    /// Adds the pressed row to the selection.
+    /// Adds the pressed row to the selection. A selected row leaves the selection on its release,
+    /// so that the press can start a drag.
     pub fn ctrl_press_row(&mut self, row: usize) {
+        if self.selection.contains(row) {
+            self.on_release = Some(Release::Remove(row));
+        }
         self.selection.add(row);
     }
 
