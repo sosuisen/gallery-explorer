@@ -182,6 +182,10 @@ impl Explorer {
         self.favorites.contains(&self.current)
     }
 
+    pub fn is_favorite(&self, path: &Path) -> bool {
+        self.favorites.contains(path)
+    }
+
     pub fn tree_rows(&self) -> Vec<TreeRow> {
         self.tree.rows(&self.roots)
     }
@@ -281,9 +285,9 @@ impl Explorer {
         }
     }
 
-    /// Adds the current folder to the favorites, or removes it when it is already there.
-    pub fn toggle_favorite(&mut self) {
-        self.favorites.toggle(&self.current);
+    /// Adds a file or a folder to the favorites, or removes it when it is already there.
+    pub fn toggle_favorite(&mut self, path: &Path) {
+        self.favorites.toggle(path);
         self.save_favorites();
     }
 
@@ -834,7 +838,7 @@ mod tests {
         let mut explorer = open(&folder);
         explorer.navigate(&folder.path().join("photos"));
 
-        explorer.toggle_favorite();
+        explorer.toggle_favorite(&explorer.current().to_path_buf());
 
         assert!(explorer.is_current_favorite());
         assert_eq!(open(&folder).favorites(), [folder.path().join("photos")]);
@@ -858,9 +862,9 @@ mod tests {
     fn toggling_again_in_a_favorite_folder_removes_it() {
         let folder = sample();
         let mut explorer = open(&folder);
-        explorer.toggle_favorite();
+        explorer.toggle_favorite(&explorer.current().to_path_buf());
 
-        explorer.toggle_favorite();
+        explorer.toggle_favorite(&explorer.current().to_path_buf());
 
         assert!(!explorer.is_current_favorite());
         assert!(open(&folder).favorites().is_empty());
@@ -871,7 +875,7 @@ mod tests {
     fn removed_favorite_is_gone_on_the_next_open() {
         let folder = sample();
         let mut explorer = open(&folder);
-        explorer.toggle_favorite();
+        explorer.toggle_favorite(&explorer.current().to_path_buf());
 
         explorer.remove_favorite(folder.path());
 
@@ -885,9 +889,9 @@ mod tests {
         let folder = sample();
         let photos = folder.path().join("photos");
         let mut explorer = open(&folder);
-        explorer.toggle_favorite();
+        explorer.toggle_favorite(&explorer.current().to_path_buf());
         explorer.navigate(&photos);
-        explorer.toggle_favorite();
+        explorer.toggle_favorite(&explorer.current().to_path_buf());
         explorer.navigate(&photos.join("inner"));
 
         explorer.open_favorite(1);
@@ -900,7 +904,7 @@ mod tests {
     fn opening_a_favorite_shows_the_grid() {
         let folder = sample();
         let mut explorer = open(&folder);
-        explorer.toggle_favorite();
+        explorer.toggle_favorite(&explorer.current().to_path_buf());
 
         explorer.open_favorite(0);
 
@@ -912,7 +916,7 @@ mod tests {
     fn opening_a_favorite_sorts_newest_first() {
         let folder = sample();
         let mut explorer = open(&folder);
-        explorer.toggle_favorite();
+        explorer.toggle_favorite(&explorer.current().to_path_buf());
 
         explorer.open_favorite(0);
 
@@ -925,9 +929,9 @@ mod tests {
         let folder = sample();
         let photos = folder.path().join("photos");
         let mut explorer = open(&folder);
-        explorer.toggle_favorite();
+        explorer.toggle_favorite(&explorer.current().to_path_buf());
         explorer.navigate(&photos);
-        explorer.toggle_favorite();
+        explorer.toggle_favorite(&explorer.current().to_path_buf());
 
         explorer.reorder_favorites(vec![photos.clone(), folder.path().to_path_buf()]);
 

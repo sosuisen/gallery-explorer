@@ -230,7 +230,10 @@ impl ExplorerWindow {
                     _ => {}
                 }
             }
-            Message::ToggleFavorite => explorer.toggle_favorite(),
+            Message::ToggleFavorite => {
+                let current = explorer.current().to_path_buf();
+                explorer.toggle_favorite(&current);
+            }
             Message::RemoveFavorite(path) => explorer.remove_favorite(&path),
             // The view clears the selection again, so the same favorite can be chosen twice.
             Message::FavoriteChosen(Some(row)) => {
