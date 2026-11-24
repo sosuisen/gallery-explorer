@@ -19,7 +19,7 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 
 | モジュール | 役割 | 主な型と関数 |
 |---|---|---|
-| `domain` | ファイルシステムも画面も使わないルール | `Entry`、`SortOrder`、`sort_entries`、`crumbs`、`resolve_crumb`、`display_name`、`Favorites`、`Tree`、`DoubleClick`、`Arrow`、`move_selection` |
+| `domain` | ファイルシステムも画面も使わないルール | `Entry`、`SortOrder`、`sort_entries`、`crumbs`、`resolve_crumb`、`display_name`、`Favorites`、`Tree`、`DoubleClick`、`Selection`、`Arrow`、`move_selection`、`ItemLayout`、`Point`、`Rect` |
 | `infra` | ファイルシステムとお気に入りのファイルへのアクセス | `read_folder`、`child_folders`、`folder_covers`、`collect_thumbnails`、`shell_thumbnail`、`image_uri`、`drives`、`FavoritesStore`、`open_with_default_app`、`show_in_explorer`、`FolderWatcher`、`Changes`、`show_app_icon` |
 | `explorer` | ウィンドウの状態と、ユーザーの操作 | `Explorer`、`ViewMode` |
 | `ui` | 状態をWinUIのコントロールに変える | `ExplorerWindow`、`Message` |
@@ -87,10 +87,42 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 
 一覧は、`ScrollViewer`の中の`StackPanel`に、行ごとの`Border`を並べて作る。選択とダブルクリックは自前で扱う。
 
-1. 一覧の行の`Border`が、左ボタンの押下のたびに`Message::RowPressed(行, 時刻)`を送る。
-2. `Explorer::press_row`が、押された行を選択にする。選択された行は、灰色の背景と左のアクセント色の線で示す。
-3. `Explorer::press_row`が`DoubleClick`に渡す。同じ行への500ms以内の2回目の押下が、ダブルクリックになる。
-4. `Explorer::open_selected`で開く。フォルダなら`navigate`する。ファイルならパスを返し、`ui`が`open_with_default_app`で開く。
+選択は、`domain`の`Selection`で持つ。選ばれた行の集合と、フォーカスの行である。
+フォーカスは、矢印キーで動かす起点で、Enterで開く行である。
+選択された行は、灰色の背景と左のアクセント色の線で示す。
+
+1. 一覧の行の`Border`が、左ボタンの押下のたびに`Message::RowPressed(行, 時刻, Ctrlか)`を送る。
+   Ctrlは、`ui`の`ctrl_is_down`が`GetKeyState`で調べる。`windows-reactor`のポインターのイベントは、キーの状態を持たないためである。
+2. Ctrlなしなら、`Explorer::press_row`が、押された行だけを選択にする。
+   ただし、押された行がすでに選ばれていれば、選択を変えない。離したときに、その行だけを選択にする。
+   押したまま、選ばれたすべての項目をドラッグできるようにするためである。
+3. Ctrlありなら、`Explorer::ctrl_press_row`が、押された行を選択に加える。
+   押された行がすでに選ばれていれば、離したときに、その行を選択から外す。
+4. 行の`Border`は、左ボタンを離すと`Message::RowReleased(行)`を送る。`Explorer::release_row`が、押下のときに残した変更を行う。
+   ドラッグが始まると、行には離上が届かない。そのため、ドラッグのあとも選択は変わらない。
+5. `Explorer::press_row`が`DoubleClick`に渡す。同じ行への500ms以内の2回目の押下が、ダブルクリックになる。
+6. `Explorer::open_selected`で、フォーカスの行を開く。フォルダなら`navigate`する。ファイルならパスを返し、`ui`が`open_with_default_app`で開く。
+
+### 矩形での選択
+
+一覧とグリッドの項目のない場所からドラッグすると、矩形で項目を選ぶ。
+
+1. `ScrollViewer`の中身は、透明な背景の`Border`（項目の領域）である。
+   この`Border`の中の座標は、スクロールしても変わらない。そのため、項目の位置と比べられる。
+   項目が少ないときも、`ScrollViewer`がこの`Border`を表示の大きさまで広げる。
+2. 項目の領域が、項目のない場所の左ボタンの押下で、`Message::BandStarted(位置, Ctrlか)`を送る。
+   項目の上の押下も親に伝わるので、項目の`press_handler`は`ITEM_PRESSED`を立てる。項目の領域は、それを見て無視する。
+3. Ctrlなしなら`Explorer::start_band`が選択を消す。Ctrlありなら`Explorer::ctrl_start_band`が今の選択を残す。
+4. ポインターが動くと、`Message::BandMoved(位置)`が届く。
+   `Explorer::move_band`が、`ItemLayout::items_in`で矩形と重なる項目を求め、矩形の前の選択に加える。
+   `ItemLayout`は、`ui`が表示の方法から作る。一覧は高さ`LIST_ROW_HEIGHT`の行、グリッドは`TILE_WIDTH`×`TILE_HEIGHT`のタイルである。
+   一覧の行は、この計算のために高さを固定する。
+5. 左ボタンを離すと、`Message::BandEnded`が届き、`Explorer::end_band`が矩形を消す。
+6. `ui`は、`Explorer::band`の矩形を、項目の上に半透明の`Border`で描く。
+
+項目の領域は、ポインターをキャプチャしない。キャプチャすると、ドラッグを始める項目からもポインターを奪うためである。
+そのため、項目の領域の外で離したことは届かない。代わりに、左ボタンが上がった状態での最初の移動で、矩形を終える。
+フォルダを読み直すと、項目の位置が変わるので、矩形も終える。
 
 ### キーでの選択と、Enterで開く
 
@@ -125,7 +157,8 @@ Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほ
 
 ### ほかのアプリへのドラッグ
 
-1. `ui`は、一覧の行とグリッドのタイルの`Border`に、その項目のパスを`drag_storage_items`で設定する。
+1. `ui`は、一覧の行とグリッドのタイルの`Border`に、`Explorer::drag_paths`のパスを`drag_storage_items`で設定する。
+   選ばれた項目には、選ばれたすべての項目のパスを設定する。選ばれていない項目には、その項目のパスだけを設定する。
 2. `windows-reactor`のコピーは、その`Border`の`CanDrag`を`true`にし、`DragStarting`を購読する。
 3. ドラッグが始まると、`DragStarting`が、許す操作をコピー・移動・リンクにし、`GetDeferral`でドラッグを待たせる。
 4. 別のスレッドが、パスから`StorageFile`か`StorageFolder`を作り、`DataPackage.SetStorageItemsReadOnly`で入れる。
@@ -154,10 +187,10 @@ Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほ
 お気に入りの行の名前の`Border`には、透明な背景を付ける。
 背景のない`Border`は、押下を受け取らないためである。
 
-一覧とグリッドの項目のない場所の右クリックは、`ScrollViewer`を包む透明な背景の`Border`で受け取る。
+一覧とグリッドの項目のない場所の右クリックは、`ScrollViewer`の中身の透明な背景の`Border`（項目の領域）で受け取る。
 項目の上の右クリックも、WinUIが親へ伝えるので、項目の`Border`のあとに、この`Border`に届く。
-そこで、項目の`press_handler`は`ITEM_MENU_ASKED`を立てる。
-`background_menu_handler`は、`ITEM_MENU_ASKED`が立っていればそれを下ろし、メニューを出さない。
+そこで、項目の`press_handler`は`ITEM_PRESSED`を立てる。
+`background_press_handler`は、`ITEM_PRESSED`が立っていればそれを下ろし、メニューを出さない。
 `windows-reactor`は、届いた順にイベントを呼ぶので、項目のハンドラーが先に呼ばれる。
 
 ### 表示順
@@ -247,6 +280,8 @@ Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほ
   フォルダを移ると、ウィンドウの最初のコントロールにフォーカスの枠が出る。
 - `MenuFlyout`がないので、右クリックメニューはWin32の`TrackPopupMenu`で出す。見た目は、WinUIではなく、古いWin32のメニューになる。
   このメニューは、キーボードでは選べない。キーがメニューに届かないためである。外をクリックすると閉じる。
+- ポインターのイベントは、`Border`にしかない。また、Ctrlなどのキーの状態を持たない。
+  そのため、Ctrlは`GetKeyState`で調べる。
 - 要素の`CanDrag`と`DragStarting`がないので、`vendor/windows-reactor`のコピーに足した。理由は[ADR 003](adr/adr-003-vendored-windows-reactor-for-drag-out.md)にある。
   Win32のOLE（`SHDoDragDrop`）では、WinUIのウィンドウからドラッグを始めても、ドラッグが終わらない。
 
