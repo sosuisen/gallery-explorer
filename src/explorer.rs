@@ -170,6 +170,17 @@ impl Explorer {
         self.entries = entries;
     }
 
+    /// The paths that a drag of `row` carries: all the selected items when `row` is selected, and
+    /// only `row` otherwise.
+    pub fn drag_paths(&self, row: usize) -> Vec<PathBuf> {
+        let path = |row: usize| self.entries.get(row).map(|entry| entry.path.clone());
+        if self.selection.contains(row) {
+            self.selection.rows().filter_map(path).collect()
+        } else {
+            path(row).into_iter().collect()
+        }
+    }
+
     /// The folders in the current folder. Their covers are looked up from these.
     pub fn folders(&self) -> Vec<PathBuf> {
         self.entries
