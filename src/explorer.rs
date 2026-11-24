@@ -862,6 +862,18 @@ mod tests {
         assert_eq!(explorer.selected_rows(), [1]);
     }
 
+    // 選ばれていない項目を押して離すと、その項目だけが選ばれたままである。
+    #[test]
+    fn release_after_a_press_on_an_unselected_item_keeps_it_selected() {
+        let folder = files(["a.txt", "b.txt"]);
+        let mut explorer = open(&folder);
+
+        explorer.press_row(1, Instant::now());
+        explorer.release_row(1);
+
+        assert_eq!(explorer.selected_rows(), [1]);
+    }
+
     // 選択された項目をCtrlで押して離すと、選択から外れる。押しただけでは外れないので、Ctrlを押したまま
     // ドラッグできる。
     #[test]
