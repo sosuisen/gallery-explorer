@@ -24,6 +24,12 @@ impl Selection {
         self.rows = BTreeSet::from([row]);
         self.focus = Some(row);
     }
+
+    /// Adds `row` to the selection and moves the focus to it.
+    pub fn add(&mut self, row: usize) {
+        self.rows.insert(row);
+        self.focus = Some(row);
+    }
 }
 
 /// A cursor key that moves the selection.
