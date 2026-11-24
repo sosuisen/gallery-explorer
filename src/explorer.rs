@@ -298,13 +298,14 @@ impl Explorer {
     /// A double click on a folder shows that folder. A double click on a file returns its path,
     /// and the caller opens it.
     pub fn press_row(&mut self, row: usize, at: Instant) -> Option<PathBuf> {
-        if self.selection.contains(row) {
+        self.on_release = if self.selection.contains(row) {
             // This only moves the focus.
             self.selection.add(row);
-            self.on_release = Some(Release::SelectOnly(row));
+            Some(Release::SelectOnly(row))
         } else {
             self.selection.select_only(row);
-        }
+            None
+        };
         if !self.clicks.press(row, at) {
             return None;
         }
@@ -324,9 +325,7 @@ impl Explorer {
     /// Adds the pressed row to the selection. A selected row leaves the selection on its release,
     /// so that the press can start a drag.
     pub fn ctrl_press_row(&mut self, row: usize) {
-        if self.selection.contains(row) {
-            self.on_release = Some(Release::Remove(row));
-        }
+        self.on_release = self.selection.contains(row).then_some(Release::Remove(row));
         self.selection.add(row);
     }
 
