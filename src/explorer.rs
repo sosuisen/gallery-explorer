@@ -882,6 +882,22 @@ mod tests {
         assert_eq!(explorer.selected_rows(), Vec::<usize>::new());
     }
 
+    // 矩形を終えると、矩形は消え、選んだ項目は選ばれたままである。そのあとマウスを動かしても、選択は変わらない。
+    #[test]
+    fn ending_a_band_removes_it_and_keeps_the_selection() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        let rows_of_ten = ItemLayout::list(0.0, 10.0);
+        explorer.start_band(Point::new(5.0, 5.0));
+        explorer.move_band(Point::new(50.0, 15.0), rows_of_ten);
+
+        explorer.end_band();
+        explorer.move_band(Point::new(50.0, 25.0), rows_of_ten);
+
+        assert_eq!(explorer.band(), None);
+        assert_eq!(explorer.selected_rows(), [0, 1]);
+    }
+
     // 一覧では、グリッドの列の数によらず、下キーで次の行が選ばれる。
     #[test]
     fn down_in_the_list_selects_the_next_row() {
