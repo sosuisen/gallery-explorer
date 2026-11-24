@@ -146,10 +146,13 @@ mod tests {
     #[test]
     fn rectangle_outside_the_items_holds_none() {
         let layout = ItemLayout::grid(4.0, 3, 10.0, 20.0);
-        let in_margin = Rect::between(Point::new(0.0, 0.0), Point::new(4.0, 50.0));
+        let left = Rect::between(Point::new(0.0, 0.0), Point::new(4.0, 50.0));
+        let right = Rect::between(Point::new(34.0, 0.0), Point::new(50.0, 50.0));
+        let above = Rect::between(Point::new(0.0, 0.0), Point::new(50.0, 4.0));
         let below = Rect::between(Point::new(0.0, 44.0), Point::new(50.0, 60.0));
 
-        assert_eq!(layout.items_in(in_margin, 6), Vec::<usize>::new());
-        assert_eq!(layout.items_in(below, 6), Vec::<usize>::new());
+        for rect in [left, right, above, below] {
+            assert_eq!(layout.items_in(rect, 6), Vec::<usize>::new());
+        }
     }
 }
