@@ -312,10 +312,16 @@ impl Explorer {
     /// Starts a band at `point` on the empty space of the items. The selection is cleared.
     pub fn start_band(&mut self, point: Point) {
         self.selection = Selection::default();
+        self.ctrl_start_band(point);
+    }
+
+    /// Starts a band at `point` on the empty space of the items. The items under the band are
+    /// added to the selection.
+    pub fn ctrl_start_band(&mut self, point: Point) {
         self.band = Some(Band {
             start: point,
             end: point,
-            base: Selection::default(),
+            base: self.selection.clone(),
         });
     }
 
