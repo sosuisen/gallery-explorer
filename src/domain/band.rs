@@ -1,5 +1,39 @@
 //! The rectangle that the user drags over the items to select them.
 
+/// A point in the area of the items, in device independent pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
+}
+
+impl Point {
+    pub const fn new(x: f64, y: f64) -> Self {
+        Self { x, y }
+    }
+}
+
+/// A rectangle whose left is not right of its right, and whose top is not below its bottom.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rect {
+    pub left: f64,
+    pub top: f64,
+    pub right: f64,
+    pub bottom: f64,
+}
+
+impl Rect {
+    /// The rectangle with `a` and `b` at opposite corners.
+    pub fn between(a: Point, b: Point) -> Self {
+        Self {
+            left: a.x.min(b.x),
+            top: a.y.min(b.y),
+            right: a.x.max(b.x),
+            bottom: a.y.max(b.y),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
