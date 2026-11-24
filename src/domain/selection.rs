@@ -84,6 +84,18 @@ mod tests {
         assert_eq!(selection.focus(), Some(3));
     }
 
+    // 加えると、前の選択に足される。
+    #[test]
+    fn adding_an_item_keeps_the_earlier_selection() {
+        let mut selection = Selection::default();
+        selection.select_only(3);
+
+        selection.add(1);
+
+        assert_eq!(rows(&selection), [1, 3]);
+        assert_eq!(selection.focus(), Some(1));
+    }
+
     // 何も選ばれていないときに矢印キーを押すと、最初の項目が選ばれる。
     #[test]
     fn arrow_without_a_selection_selects_the_first_item() {
