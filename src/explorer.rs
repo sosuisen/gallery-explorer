@@ -691,6 +691,33 @@ mod tests {
         assert_eq!(explorer.entries()[selected].name, "note.txt");
     }
 
+    // 読み直しても、選択された項目はすべて選択されたままである。
+    #[test]
+    fn all_selected_items_stay_selected_through_a_refresh() {
+        let folder = files(["b.txt", "c.txt", "d.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(2);
+        fs::write(folder.path().join("a.txt"), "").unwrap();
+
+        explorer.refresh();
+
+        assert_eq!(explorer.selected_rows(), [1, 3]);
+    }
+
+    // 読み直すと、広げていた矩形は終わる。項目の位置が変わり、矩形の下の項目が変わるためである。
+    #[test]
+    fn refresh_ends_the_band() {
+        let folder = files(["b.txt"]);
+        let mut explorer = open(&folder);
+        explorer.start_band(Point::new(5.0, 5.0));
+        fs::write(folder.path().join("a.txt"), "").unwrap();
+
+        explorer.refresh();
+
+        assert_eq!(explorer.band(), None);
+    }
+
     // 選択していた項目が消えると、選択はなくなる。
     #[test]
     fn selection_is_cleared_when_the_selected_item_is_removed() {
