@@ -898,6 +898,22 @@ mod tests {
         assert_eq!(explorer.current(), photos);
     }
 
+    // お気に入りのファイルを開くと、そのパスが返り、今のフォルダは変わらない。
+    #[test]
+    fn opening_a_favorite_file_returns_it_and_keeps_the_folder() {
+        let folder = sample();
+        let photos = folder.path().join("photos");
+        let note = folder.path().join("note.txt");
+        let mut explorer = open(&folder);
+        explorer.toggle_favorite(&note);
+        explorer.navigate(&photos);
+
+        let opened = explorer.open_favorite(0);
+
+        assert_eq!(opened, Some(note));
+        assert_eq!(explorer.current(), photos);
+    }
+
     // お気に入りから開くと、一覧で見ていてもグリッドで表示される。
     #[test]
     fn opening_a_favorite_shows_the_grid() {
