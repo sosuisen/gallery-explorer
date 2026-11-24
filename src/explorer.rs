@@ -657,6 +657,18 @@ mod tests {
         assert_eq!(explorer.selected(), Some(1));
     }
 
+    // Ctrlで押すと、項目が選択に加わる。
+    #[test]
+    fn ctrl_press_adds_the_item_to_the_selection() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+
+        explorer.ctrl_press_row(1);
+
+        assert_eq!(explorer.selected_rows(), [0, 1]);
+    }
+
     // 一覧では、グリッドの列の数によらず、下キーで次の行が選ばれる。
     #[test]
     fn down_in_the_list_selects_the_next_row() {
