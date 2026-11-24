@@ -161,8 +161,9 @@ impl Explorer {
         let selected: Vec<PathBuf> = self.selection.rows().filter_map(path_of).collect();
         let focus = self.selection.focus().and_then(path_of);
         let row_of = |path: &PathBuf| entries.iter().position(|entry| &entry.path == path);
-        // The rows may move, so a press before the change must not pair with one after it.
-        self.clicks.reset();
+        // The rows may move, so a press or a band before the change must not act on the rows
+        // after it.
+        self.forget_presses();
         self.selection = Selection::new(
             selected.iter().filter_map(row_of),
             focus.as_ref().and_then(row_of),
@@ -179,6 +180,13 @@ impl Explorer {
         } else {
             path(row).into_iter().collect()
         }
+    }
+
+    /// Forgets the presses and the band that refer to rows, when the rows change.
+    fn forget_presses(&mut self) {
+        self.clicks.reset();
+        self.on_release = None;
+        self.band = None;
     }
 
     /// The folders in the current folder. Their covers are looked up from these.
@@ -246,7 +254,7 @@ impl Explorer {
                 self.covers.clear();
                 self.thumbnails.clear();
                 self.selection = Selection::default();
-                self.clicks.reset();
+                self.forget_presses();
                 self.error = None;
             }
             Err(error) => self.fail(path, &error),
@@ -262,6 +270,7 @@ impl Explorer {
             Err(error) => {
                 self.entries.clear();
                 self.selection = Selection::default();
+                self.forget_presses();
                 let current = self.current.clone();
                 self.fail(&current, &error);
             }
