@@ -1,3 +1,54 @@
+use std::collections::BTreeSet;
+
+/// The selected items, by row.
+///
+/// The focus is the row that the cursor keys move from, and the row that Enter opens.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Selection {
+    rows: BTreeSet<usize>,
+    focus: Option<usize>,
+}
+
+impl Selection {
+    /// Selects `rows`, with the focus on `focus`.
+    pub fn new(rows: impl IntoIterator<Item = usize>, focus: Option<usize>) -> Self {
+        Self {
+            rows: rows.into_iter().collect(),
+            focus,
+        }
+    }
+
+    /// The selected rows, in ascending order.
+    pub fn rows(&self) -> impl Iterator<Item = usize> + '_ {
+        self.rows.iter().copied()
+    }
+
+    pub fn focus(&self) -> Option<usize> {
+        self.focus
+    }
+
+    /// Selects `row` and nothing else.
+    pub fn select_only(&mut self, row: usize) {
+        self.rows = BTreeSet::from([row]);
+        self.focus = Some(row);
+    }
+
+    /// Adds `row` to the selection and moves the focus to it.
+    pub fn add(&mut self, row: usize) {
+        self.rows.insert(row);
+        self.focus = Some(row);
+    }
+
+    /// Takes `row` out of the selection. The focus stays where it is.
+    pub fn remove(&mut self, row: usize) {
+        self.rows.remove(&row);
+    }
+
+    pub fn contains(&self, row: usize) -> bool {
+        self.rows.contains(&row)
+    }
+}
+
 /// A cursor key that moves the selection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Arrow {
@@ -39,6 +90,48 @@ pub fn move_selection(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn rows(selection: &Selection) -> Vec<usize> {
+        selection.rows().collect()
+    }
+
+    // 1つだけ選ぶと、前の選択は消える。
+    #[test]
+    fn selecting_only_one_item_drops_the_earlier_selection() {
+        let mut selection = Selection::default();
+        selection.select_only(1);
+
+        selection.select_only(3);
+
+        assert_eq!(rows(&selection), [3]);
+        assert_eq!(selection.focus(), Some(3));
+    }
+
+    // 加えると、前の選択に足される。
+    #[test]
+    fn adding_an_item_keeps_the_earlier_selection() {
+        let mut selection = Selection::default();
+        selection.select_only(3);
+
+        selection.add(1);
+
+        assert_eq!(rows(&selection), [1, 3]);
+        assert_eq!(selection.focus(), Some(1));
+    }
+
+    // 外すと、その項目だけが選択から消える。
+    #[test]
+    fn removing_an_item_keeps_the_others() {
+        let mut selection = Selection::default();
+        selection.select_only(1);
+        selection.add(3);
+
+        selection.remove(1);
+
+        assert_eq!(rows(&selection), [3]);
+        assert!(!selection.contains(1));
+        assert!(selection.contains(3));
+    }
 
     // 何も選ばれていないときに矢印キーを押すと、最初の項目が選ばれる。
     #[test]

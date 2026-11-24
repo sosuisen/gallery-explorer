@@ -9,7 +9,9 @@ use std::time::Instant;
 use windows::Win32::Foundation::HWND;
 use windows_reactor::*;
 
-use crate::domain::{Arrow, Entry, SortOrder, TreeRow, crumbs, display_name};
+use crate::domain::{
+    Arrow, Entry, ItemLayout, Point, Rect, SortOrder, TreeRow, crumbs, display_name,
+};
 use crate::explorer::{Explorer, ViewMode};
 use crate::infra::{
     Changes, FavoritesStore, FolderWatcher, collect_thumbnails, drives, folder_covers, image_uri,
@@ -36,6 +38,12 @@ const GRID_PREVIEW: PreviewSize = PreviewSize {
 };
 /// The list shows the same previews at 60% of the size in the grid.
 const LIST_PREVIEW: PreviewSize = GRID_PREVIEW.scaled(0.6);
+/// The padding above and below the content of a list row.
+const LIST_ROW_PADDING: f64 = 4.0;
+/// The height of a list row. It is fixed, so that the band can tell which rows it covers.
+const LIST_ROW_HEIGHT: f64 = LIST_PREVIEW.height + LIST_ROW_PADDING * 2.0;
+// A translucent accent shows the band on both the light and the dark theme.
+const BAND_BACKGROUND: Color = Color::argb(0x40, 0x00, 0x78, 0xD4);
 // The longest side of a shell thumbnail in pixels. It stays sharp at a display scale of 200%.
 const SHELL_THUMBNAIL_SIZE: u32 = 256;
 
@@ -55,7 +63,17 @@ pub enum Message {
     CrumbClicked(String),
     ToggleTree(PathBuf),
     OpenTreeFolder(PathBuf),
-    RowPressed(usize, Instant),
+    /// A left press on an item. It holds the row, the time, and whether Ctrl was down.
+    RowPressed(usize, Instant, bool),
+    /// The left button went up over an item. It holds the row.
+    RowReleased(usize),
+    /// A left press on the empty space of the items. It holds the point in the items area, and
+    /// whether Ctrl was down.
+    BandStarted(Point, bool),
+    /// The pointer moved during a band. It holds the point in the items area.
+    BandMoved(Point),
+    /// The left button went up, or was found up, during a band.
+    BandEnded,
     /// A right press on a favorite, a tree row or the empty space of the list. It holds the path
     /// of the file or the folder. Its menu has no delete.
     ShowMenu(PathBuf),
@@ -194,11 +212,20 @@ impl ExplorerWindow {
             Message::CrumbClicked(label) => explorer.crumb_clicked(&label),
             Message::ToggleTree(path) => explorer.toggle_tree(&path),
             Message::OpenTreeFolder(path) => explorer.open_tree_folder(&path),
-            Message::RowPressed(row, at) => {
+            Message::RowPressed(row, _, true) => explorer.ctrl_press_row(row),
+            Message::RowPressed(row, at, false) => {
                 if let Some(file) = explorer.press_row(row, at) {
                     open_file(explorer, &file);
                 }
             }
+            Message::RowReleased(row) => explorer.release_row(row),
+            Message::BandStarted(point, true) => explorer.ctrl_start_band(point),
+            Message::BandStarted(point, false) => explorer.start_band(point),
+            Message::BandMoved(point) => {
+                let layout = self.item_layout();
+                self.explorer.move_band(point, layout);
+            }
+            Message::BandEnded => explorer.end_band(),
             Message::KeyPressed(Key::Arrow(arrow)) => {
                 explorer.move_selection(arrow, self.columns);
                 self.key_moves += 1;
@@ -251,6 +278,14 @@ impl ExplorerWindow {
             Message::ThumbnailsMade(folder, thumbnails) => {
                 explorer.set_thumbnails(&folder, thumbnails)
             }
+        }
+    }
+
+    /// Where the items lie in the items area. The band uses it to find the items it covers.
+    fn item_layout(&self) -> ItemLayout {
+        match self.explorer.view_mode() {
+            ViewMode::List => ItemLayout::list(ITEMS_MARGIN, LIST_ROW_HEIGHT),
+            ViewMode::Grid => ItemLayout::grid(ITEMS_MARGIN, self.columns, TILE_WIDTH, TILE_HEIGHT),
         }
     }
 
@@ -432,23 +467,25 @@ impl ExplorerWindow {
     // left-aligned container, so a row cannot fill the width.
     // The grid uses a VariableSizedWrapGrid instead of a GridView for the same reason.
     fn file_list(&self, context: &ViewContext<Self>) -> View {
-        let selected = self.explorer.selected();
-        let mode = self.explorer.view_mode();
-        let items = self
-            .explorer
-            .entries()
-            .iter()
-            .enumerate()
-            .map(|(row, entry)| {
-                let is_selected = selected == Some(row);
-                let source = thumbnail_source(&self.explorer, entry);
-                let view = match mode {
-                    ViewMode::List => file_row(row, entry, source, is_selected, context),
-                    ViewMode::Grid => file_tile(row, entry, source, is_selected, context),
-                };
-                let view = with_scroll_buttons(view, is_selected.then_some(&self.focus_anchor));
-                (entry.name.clone(), view)
-            });
+        let explorer = &self.explorer;
+        let focus = explorer.focus();
+        let selected = explorer.selected_rows();
+        let mode = explorer.view_mode();
+        let items = explorer.entries().iter().enumerate().map(|(row, entry)| {
+            let item = Item {
+                row,
+                entry,
+                selected: selected.binary_search(&row).is_ok(),
+                drag_paths: explorer.drag_paths(row),
+            };
+            let source = thumbnail_source(explorer, entry);
+            let view = match mode {
+                ViewMode::List => file_row(item, source, context),
+                ViewMode::Grid => file_tile(item, source, context),
+            };
+            let anchor = (focus == Some(row)).then_some(&self.focus_anchor);
+            (entry.name.clone(), with_scroll_buttons(view, anchor))
+        });
         let panel: View = match mode {
             ViewMode::List => StackPanel::new().margin(ITEMS_MARGIN).keyed_children(items),
             ViewMode::Grid => VariableSizedWrapGrid::new()
@@ -459,13 +496,17 @@ impl ExplorerWindow {
                 .keyed_children(items),
         };
 
-        // The border takes the right presses on the empty space around the items.
-        Border::new()
-            .grid_row(2)
+        // The border takes the presses on the empty space around the items. It is the content of
+        // the ScrollViewer, so its points are in the items area, whatever the scroll. The
+        // ScrollViewer stretches it to fill the view when the items are fewer.
+        let area = Border::new()
             // A border without a background receives no pointer events.
             .background(Color::transparent())
-            .on_pointer_pressed(background_menu_handler(self.explorer.current(), context))
-            .content(ScrollViewer::new().content(panel))
+            .on_pointer_pressed(background_press_handler(explorer.current(), context))
+            .on_pointer_moved(band_move_handler(context))
+            .on_pointer_released(band_release_handler(context))
+            .content(Grid::new().children((panel, band_view(explorer.band()))));
+        ScrollViewer::new().grid_row(2).content(area)
     }
 
     fn status_bar(&self) -> View {
@@ -641,25 +682,40 @@ fn scroll_button() -> Button {
         .vertical_alignment(VerticalAlignment::Stretch)
 }
 
-fn file_row(
+/// An item of the list or the grid, with what the view needs to show it.
+struct Item<'a> {
     row: usize,
-    entry: &Entry,
-    source: Option<ThumbnailSource>,
+    entry: &'a Entry,
     selected: bool,
+    /// The paths that a drag of this item carries.
+    drag_paths: Vec<PathBuf>,
+}
+
+fn file_row(
+    item: Item,
+    source: Option<ThumbnailSource>,
     context: &ViewContext<ExplorerWindow>,
 ) -> View {
+    let entry = item.entry;
     // The selected row gets a gray background and an accent bar on the left. Every row keeps the
     // bar's width, so the text does not move when the selection changes.
-    let (background, bar) = selection_brushes(selected);
+    let (background, bar) = selection_brushes(item.selected);
 
     Border::new()
         .background(background)
         .border_brush(bar)
         .border_thickness(Thickness::new(3.0, 0.0, 0.0, 0.0))
         .corner_radius(4.0)
-        .padding(Thickness::new(12.0, 4.0, 12.0, 4.0))
-        .on_pointer_pressed(press_handler(row, entry, context))
-        .drag_storage_items(DragStorageItems::new([entry.path.clone()]))
+        .height(LIST_ROW_HEIGHT)
+        .padding(Thickness::new(
+            12.0,
+            LIST_ROW_PADDING,
+            12.0,
+            LIST_ROW_PADDING,
+        ))
+        .on_pointer_pressed(press_handler(item.row, entry, context))
+        .on_pointer_released(release_handler(item.row, context))
+        .drag_storage_items(DragStorageItems::new(item.drag_paths))
         .content(
             StackPanel::new()
                 .orientation(Orientation::Horizontal)
@@ -674,14 +730,13 @@ fn file_row(
 }
 
 fn file_tile(
-    row: usize,
-    entry: &Entry,
+    item: Item,
     source: Option<ThumbnailSource>,
-    selected: bool,
     context: &ViewContext<ExplorerWindow>,
 ) -> View {
+    let entry = item.entry;
     // The selected tile gets a gray background and an accent outline.
-    let (background, outline) = selection_brushes(selected);
+    let (background, outline) = selection_brushes(item.selected);
 
     Border::new()
         .background(background)
@@ -690,8 +745,9 @@ fn file_tile(
         .corner_radius(6.0)
         .margin(2.0)
         .padding(4.0)
-        .on_pointer_pressed(press_handler(row, entry, context))
-        .drag_storage_items(DragStorageItems::new([entry.path.clone()]))
+        .on_pointer_pressed(press_handler(item.row, entry, context))
+        .on_pointer_released(release_handler(item.row, context))
+        .drag_storage_items(DragStorageItems::new(item.drag_paths))
         .content(
             StackPanel::new().spacing(4.0).children((
                 preview(entry, source, GRID_PREVIEW),
@@ -836,31 +892,106 @@ fn press_handler(
     let path = entry.path.clone();
     let is_folder = entry.is_folder();
     move |pointer: PointerEventInfo| {
+        ITEM_PRESSED.set(true);
         if pointer.is_left_button_pressed {
-            sender.send(Message::RowPressed(row, Instant::now()));
+            sender.send(Message::RowPressed(row, Instant::now(), ctrl_is_down()));
         } else if pointer.is_right_button_pressed {
-            ITEM_MENU_ASKED.set(true);
             sender.send(Message::ShowItemMenu(path.clone(), is_folder));
         }
     }
 }
 
-/// A right press on the empty space of the list or the grid asks for the context menu of the
-/// current folder.
+/// The release on an item finishes what its press left for the release. A drag of the item takes
+/// the pointer, so a drag ends without a release here.
+fn release_handler(
+    row: usize,
+    context: &ViewContext<ExplorerWindow>,
+) -> impl Fn(PointerEventInfo) + use<> {
+    let sender = context.sender();
+    move |_: PointerEventInfo| {
+        sender.send(Message::RowReleased(row));
+    }
+}
+
+/// A left press on the empty space of the list or the grid starts a band. A right press asks for
+/// the context menu of the current folder.
 ///
 /// A press on an item also reaches this handler, after the item's handler, because WinUI passes
 /// the press on to the parents. The item's handler marks the press, and this handler ignores it.
-fn background_menu_handler(
+fn background_press_handler(
     folder: &Path,
     context: &ViewContext<ExplorerWindow>,
 ) -> impl Fn(PointerEventInfo) + use<> {
     let sender = context.sender();
     let folder = folder.to_path_buf();
     move |pointer: PointerEventInfo| {
-        if pointer.is_right_button_pressed && !ITEM_MENU_ASKED.replace(false) {
+        if ITEM_PRESSED.replace(false) {
+            return;
+        }
+        if pointer.is_left_button_pressed {
+            BANDING.set(true);
+            let point = Point::new(pointer.x, pointer.y);
+            sender.send(Message::BandStarted(point, ctrl_is_down()));
+        } else if pointer.is_right_button_pressed {
             sender.send(Message::ShowMenu(folder.clone()));
         }
     }
+}
+
+/// Stretches the band while the left button is down.
+///
+/// The area does not capture the pointer, because a capture would also take the pointer from an
+/// item that starts a drag. So a release outside the area does not come here. The first move
+/// with the left button up ends the band instead.
+fn band_move_handler(context: &ViewContext<ExplorerWindow>) -> impl Fn(PointerEventInfo) + use<> {
+    let sender = context.sender();
+    move |pointer: PointerEventInfo| {
+        if !BANDING.get() {
+            return;
+        }
+        if pointer.is_left_button_pressed {
+            sender.send(Message::BandMoved(Point::new(pointer.x, pointer.y)));
+        } else {
+            BANDING.set(false);
+            sender.send(Message::BandEnded);
+        }
+    }
+}
+
+fn band_release_handler(
+    context: &ViewContext<ExplorerWindow>,
+) -> impl Fn(PointerEventInfo) + use<> {
+    let sender = context.sender();
+    move |_: PointerEventInfo| {
+        if BANDING.replace(false) {
+            sender.send(Message::BandEnded);
+        }
+    }
+}
+
+/// Shows the band as a translucent rectangle over the items.
+fn band_view(band: Option<Rect>) -> View {
+    let Some(band) = band else {
+        return View::empty();
+    };
+    Border::new()
+        .horizontal_alignment(HorizontalAlignment::Left)
+        .vertical_alignment(VerticalAlignment::Top)
+        .margin(Thickness::new(band.left, band.top, 0.0, 0.0))
+        .width(band.right - band.left)
+        .height(band.bottom - band.top)
+        .background(BAND_BACKGROUND)
+        .border_brush(Brush::Theme(ThemeBrush::Accent))
+        .border_thickness(1.0)
+        .into()
+}
+
+/// Whether a Ctrl key is down now. The pointer events of windows-reactor do not tell.
+fn ctrl_is_down() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL};
+
+    // The high bit, and so a negative value, means the key is down.
+    unsafe { GetKeyState(i32::from(VK_CONTROL.0)) < 0 }
 }
 
 /// A right press on a favorite or a tree row asks for the context menu of its file or folder.
@@ -916,9 +1047,10 @@ fn popup_menu(items: &[&str]) -> Option<usize> {
 }
 
 thread_local! {
-    /// Whether the right press that is being handled was on an item. See
-    /// `background_menu_handler`.
-    static ITEM_MENU_ASKED: Cell<bool> = const { Cell::new(false) };
+    /// Whether the press that is being handled was on an item. See `background_press_handler`.
+    static ITEM_PRESSED: Cell<bool> = const { Cell::new(false) };
+    /// Whether the user is dragging a band over the items.
+    static BANDING: Cell<bool> = const { Cell::new(false) };
     /// Where the key hook sends the keys. The hook runs on the UI thread, as the window does.
     static KEY_SENDER: RefCell<Option<LocalSender<Message>>> = const { RefCell::new(None) };
     /// The window that WinUI reads the keys from. It is the window of the last key.

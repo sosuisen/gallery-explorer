@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::domain::{
-    Arrow, DoubleClick, Entry, Favorites, SortOrder, Tree, TreeRow, move_selection, resolve_crumb,
-    sort_entries,
+    Arrow, DoubleClick, Entry, Favorites, ItemLayout, Point, Rect, Selection, SortOrder, Tree,
+    TreeRow, move_selection, resolve_crumb, sort_entries,
 };
 use crate::infra::{FavoritesStore, child_folders, read_folder};
 
@@ -28,7 +28,7 @@ pub struct Explorer {
     covers: HashMap<PathBuf, PathBuf>,
     /// The shell thumbnails of files that are not images, by file path. They are encoded images.
     thumbnails: HashMap<PathBuf, Arc<[u8]>>,
-    selected: Option<usize>,
+    selection: Selection,
     view_mode: ViewMode,
     sort_order: SortOrder,
     error: Option<String>,
@@ -36,6 +36,37 @@ pub struct Explorer {
     store: FavoritesStore,
     tree: Tree,
     clicks: DoubleClick,
+    /// What the release of the pressed item does to the selection.
+    on_release: Option<Release>,
+    /// The rectangle that the user is dragging over the items, if any.
+    band: Option<Band>,
+}
+
+/// A rectangle that the user drags over the items to select them.
+#[derive(Clone, Debug)]
+struct Band {
+    start: Point,
+    end: Point,
+    /// The selection before the band. The items under the band are added to it.
+    base: Selection,
+}
+
+impl Band {
+    fn rect(&self) -> Rect {
+        Rect::between(self.start, self.end)
+    }
+}
+
+/// A change of the selection that waits for the release of the pressed item.
+///
+/// A press on a selected item may start a drag of all the selected items, so the selection must
+/// not change before the drag.
+#[derive(Clone, Copy, Debug)]
+enum Release {
+    /// Selects only this row.
+    SelectOnly(usize),
+    /// Takes this row out of the selection.
+    Remove(usize),
 }
 
 impl Explorer {
@@ -54,7 +85,7 @@ impl Explorer {
             entries: Vec::new(),
             covers: HashMap::new(),
             thumbnails: HashMap::new(),
-            selected: None,
+            selection: Selection::default(),
             view_mode: ViewMode::List,
             sort_order: SortOrder::default(),
             error: None,
@@ -62,6 +93,8 @@ impl Explorer {
             store,
             tree: Tree::default(),
             clicks: DoubleClick::default(),
+            on_release: None,
+            band: None,
         };
         explorer.navigate(start);
         // The favorites error is the older one, but it would be lost behind a clean start.
@@ -77,8 +110,14 @@ impl Explorer {
         &self.entries
     }
 
-    pub fn selected(&self) -> Option<usize> {
-        self.selected
+    /// The selected row that the cursor keys move from, and that Enter opens.
+    pub fn focus(&self) -> Option<usize> {
+        self.selection.focus()
+    }
+
+    /// The selected rows, in ascending order.
+    pub fn selected_rows(&self) -> Vec<usize> {
+        self.selection.rows().collect()
     }
 
     pub fn error(&self) -> Option<&str> {
@@ -119,15 +158,36 @@ impl Explorer {
     /// Shows new items in place of the old ones. The selected item stays selected while it is
     /// still there.
     fn replace_entries(&mut self, entries: Vec<Entry>) {
-        let selected = self
-            .selected
-            .and_then(|row| self.entries.get(row))
-            .map(|entry| entry.path.clone());
-        // The rows may move, so a press before the change must not pair with one after it.
-        self.clicks.reset();
-        self.selected =
-            selected.and_then(|path| entries.iter().position(|entry| entry.path == path));
+        let path_of = |row: usize| self.entries.get(row).map(|entry| entry.path.clone());
+        let selected: Vec<PathBuf> = self.selection.rows().filter_map(path_of).collect();
+        let focus = self.selection.focus().and_then(path_of);
+        let row_of = |path: &PathBuf| entries.iter().position(|entry| &entry.path == path);
+        // The rows may move, so a press or a band before the change must not act on the rows
+        // after it.
+        self.forget_presses();
+        self.selection = Selection::new(
+            selected.iter().filter_map(row_of),
+            focus.as_ref().and_then(row_of),
+        );
         self.entries = entries;
+    }
+
+    /// The paths that a drag of `row` carries: all the selected items when `row` is selected, and
+    /// only `row` otherwise.
+    pub fn drag_paths(&self, row: usize) -> Vec<PathBuf> {
+        let path = |row: usize| self.entries.get(row).map(|entry| entry.path.clone());
+        if self.selection.contains(row) {
+            self.selection.rows().filter_map(path).collect()
+        } else {
+            path(row).into_iter().collect()
+        }
+    }
+
+    /// Forgets the presses and the band that refer to rows, when the rows change.
+    fn forget_presses(&mut self) {
+        self.clicks.reset();
+        self.on_release = None;
+        self.band = None;
     }
 
     /// The folders in the current folder. Their covers are looked up from these.
@@ -194,8 +254,8 @@ impl Explorer {
                 self.entries = entries;
                 self.covers.clear();
                 self.thumbnails.clear();
-                self.selected = None;
-                self.clicks.reset();
+                self.selection = Selection::default();
+                self.forget_presses();
                 self.error = None;
             }
             Err(error) => self.fail(path, &error),
@@ -210,7 +270,8 @@ impl Explorer {
             Ok(entries) => self.replace_entries(entries),
             Err(error) => {
                 self.entries.clear();
-                self.selected = None;
+                self.selection = Selection::default();
+                self.forget_presses();
                 let current = self.current.clone();
                 self.fail(&current, &error);
             }
@@ -231,14 +292,78 @@ impl Explorer {
 
     /// Records a press on a list row. The pressed row becomes the selected row.
     ///
+    /// A press on a selected row keeps the other selected rows until `release_row`, because the
+    /// press may start a drag of all of them.
+    ///
     /// A double click on a folder shows that folder. A double click on a file returns its path,
     /// and the caller opens it.
     pub fn press_row(&mut self, row: usize, at: Instant) -> Option<PathBuf> {
-        self.selected = Some(row);
+        self.on_release = if self.selection.contains(row) {
+            // This only moves the focus.
+            self.selection.add(row);
+            Some(Release::SelectOnly(row))
+        } else {
+            self.selection.select_only(row);
+            None
+        };
         if !self.clicks.press(row, at) {
             return None;
         }
         self.open_selected()
+    }
+
+    /// Records the release of the left button on a row. It finishes what the press on that row
+    /// left for the release.
+    pub fn release_row(&mut self, row: usize) {
+        match self.on_release.take() {
+            Some(Release::SelectOnly(pressed)) if pressed == row => self.selection.select_only(row),
+            Some(Release::Remove(pressed)) if pressed == row => self.selection.remove(row),
+            _ => {}
+        }
+    }
+
+    /// Adds the pressed row to the selection. A selected row leaves the selection on its release,
+    /// so that the press can start a drag.
+    pub fn ctrl_press_row(&mut self, row: usize) {
+        self.on_release = self.selection.contains(row).then_some(Release::Remove(row));
+        self.selection.add(row);
+    }
+
+    /// Starts a band at `point` on the empty space of the items. The selection is cleared.
+    pub fn start_band(&mut self, point: Point) {
+        self.selection = Selection::default();
+        self.ctrl_start_band(point);
+    }
+
+    /// Starts a band at `point` on the empty space of the items. The items under the band are
+    /// added to the selection.
+    pub fn ctrl_start_band(&mut self, point: Point) {
+        self.band = Some(Band {
+            start: point,
+            end: point,
+            base: self.selection.clone(),
+        });
+    }
+
+    /// Stretches the band to `point`. The items under it become selected. `layout` tells where
+    /// the items are.
+    pub fn move_band(&mut self, point: Point, layout: ItemLayout) {
+        let Some(band) = &mut self.band else {
+            return;
+        };
+        band.end = point;
+        let under = layout.items_in(band.rect(), self.entries.len());
+        self.selection = Selection::new(band.base.rows().chain(under), band.base.focus());
+    }
+
+    /// Ends the band. The items under it stay selected.
+    pub fn end_band(&mut self) {
+        self.band = None;
+    }
+
+    /// The rectangle of the band, while the user drags it.
+    pub fn band(&self) -> Option<Rect> {
+        self.band.as_ref().map(Band::rect)
     }
 
     /// Moves the selection with a cursor key. columns is the number of tiles in one row of the
@@ -249,13 +374,14 @@ impl Explorer {
             ViewMode::List => 1,
             ViewMode::Grid => columns,
         };
-        self.selected = move_selection(self.selected, self.entries.len(), columns, arrow);
+        let moved = move_selection(self.selection.focus(), self.entries.len(), columns, arrow);
+        self.selection = Selection::new(moved, moved);
     }
 
     /// Opens the selected item. A folder is shown. For a file, its path is returned, and the
     /// caller opens it.
     pub fn open_selected(&mut self) -> Option<PathBuf> {
-        let entry = self.entries.get(self.selected?)?.clone();
+        let entry = self.entries.get(self.selection.focus()?)?.clone();
         if entry.is_folder() {
             self.navigate(&entry.path);
             None
@@ -354,6 +480,15 @@ mod tests {
     fn open(folder: &TempDir) -> Explorer {
         let store = FavoritesStore::new(folder.path().join("favorites").join("favorites.json"));
         Explorer::open(vec![folder.path().to_path_buf()], folder.path(), store)
+    }
+
+    /// A folder with empty files of the given names.
+    fn files<const N: usize>(names: [&str; N]) -> TempDir {
+        let folder = tempfile::tempdir().unwrap();
+        for name in names {
+            fs::write(folder.path().join(name), "").unwrap();
+        }
+        folder
     }
 
     fn names(explorer: &Explorer) -> Vec<&str> {
@@ -530,7 +665,7 @@ mod tests {
         explorer.set_sort_order(SortOrder::NameDescending);
 
         assert_eq!(names(&explorer), ["photos", "note.txt", "a.jpg"]);
-        assert_eq!(explorer.selected(), Some(1));
+        assert_eq!(explorer.selected_rows(), [1]);
         assert_eq!(explorer.sort_order(), SortOrder::NameDescending);
     }
 
@@ -561,8 +696,36 @@ mod tests {
 
         explorer.refresh();
 
-        let selected = explorer.selected().unwrap();
-        assert_eq!(explorer.entries()[selected].name, "note.txt");
+        assert_eq!(explorer.selected_rows(), [2]);
+        assert_eq!(explorer.entries()[2].name, "note.txt");
+        assert_eq!(explorer.focus(), Some(2));
+    }
+
+    // 読み直しても、選択された項目はすべて選択されたままである。
+    #[test]
+    fn all_selected_items_stay_selected_through_a_refresh() {
+        let folder = files(["b.txt", "c.txt", "d.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(2);
+        fs::write(folder.path().join("a.txt"), "").unwrap();
+
+        explorer.refresh();
+
+        assert_eq!(explorer.selected_rows(), [1, 3]);
+    }
+
+    // 読み直すと、広げていた矩形は終わる。項目の位置が変わり、矩形の下の項目が変わるためである。
+    #[test]
+    fn refresh_ends_the_band() {
+        let folder = files(["b.txt"]);
+        let mut explorer = open(&folder);
+        explorer.start_band(Point::new(5.0, 5.0));
+        fs::write(folder.path().join("a.txt"), "").unwrap();
+
+        explorer.refresh();
+
+        assert_eq!(explorer.band(), None);
     }
 
     // 選択していた項目が消えると、選択はなくなる。
@@ -575,7 +738,7 @@ mod tests {
 
         explorer.refresh();
 
-        assert_eq!(explorer.selected(), None);
+        assert_eq!(explorer.selected_rows(), Vec::<usize>::new());
     }
 
     // 読み直しの前後の押下は、ダブルクリックにならない。
@@ -604,7 +767,7 @@ mod tests {
         explorer.refresh();
 
         assert!(explorer.entries().is_empty());
-        assert_eq!(explorer.selected(), None);
+        assert_eq!(explorer.selected_rows(), Vec::<usize>::new());
         assert!(explorer.error().is_some());
     }
 
@@ -631,7 +794,7 @@ mod tests {
         assert_eq!(opened, None);
         assert_eq!(explorer.current(), folder.path().join("photos"));
         assert_eq!(names(&explorer), ["inner"]);
-        assert_eq!(explorer.selected(), None);
+        assert_eq!(explorer.selected_rows(), Vec::<usize>::new());
     }
 
     // ファイルをダブルクリックすると、開くファイルのパスが返り、フォルダは変わらない。
@@ -654,7 +817,223 @@ mod tests {
 
         explorer.press_row(1, Instant::now());
 
-        assert_eq!(explorer.selected(), Some(1));
+        assert_eq!(explorer.selected_rows(), [1]);
+    }
+
+    // Ctrlで押すと、項目が選択に加わる。
+    #[test]
+    fn ctrl_press_adds_the_item_to_the_selection() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+
+        explorer.ctrl_press_row(1);
+
+        assert_eq!(explorer.selected_rows(), [0, 1]);
+    }
+
+    // 押した項目だけが選ばれる。Ctrlで選んだ項目も、選択から外れる。
+    #[test]
+    fn press_selects_only_the_pressed_item() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(1);
+
+        explorer.press_row(2, Instant::now());
+
+        assert_eq!(explorer.selected_rows(), [2]);
+    }
+
+    // 複数を選んだまま選択された項目を押しても、選択は変わらない。離すと、その項目だけが選ばれる。
+    // 押したまま、選択されたすべての項目をドラッグできるようにするためである。
+    #[test]
+    fn press_on_a_selected_item_keeps_the_selection_until_release() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(1);
+
+        explorer.press_row(1, Instant::now());
+        assert_eq!(explorer.selected_rows(), [0, 1]);
+
+        explorer.release_row(1);
+        assert_eq!(explorer.selected_rows(), [1]);
+    }
+
+    // 選ばれていない項目を押して離すと、その項目だけが選ばれたままである。
+    #[test]
+    fn release_after_a_press_on_an_unselected_item_keeps_it_selected() {
+        let folder = files(["a.txt", "b.txt"]);
+        let mut explorer = open(&folder);
+
+        explorer.press_row(1, Instant::now());
+        explorer.release_row(1);
+
+        assert_eq!(explorer.selected_rows(), [1]);
+    }
+
+    // 選択された項目を押してドラッグしたあと、別の項目の上で離しても、選択は変わらない。
+    // ドラッグでは、押した項目に離上が届かないので、押下で残した変更は行われないままになる。
+    #[test]
+    fn release_on_another_item_after_a_drag_keeps_the_selection() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(1);
+        explorer.ctrl_press_row(1);
+        explorer.press_row(0, Instant::now());
+
+        explorer.release_row(2);
+        explorer.release_row(1);
+
+        assert_eq!(explorer.selected_rows(), [0, 1]);
+    }
+
+    // 選択された項目をCtrlで押してドラッグしたあと、別の項目の上で離しても、選択は変わらない。
+    #[test]
+    fn release_on_another_item_after_a_ctrl_drag_keeps_the_selection() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(1);
+        explorer.ctrl_press_row(1);
+
+        explorer.release_row(0);
+
+        assert_eq!(explorer.selected_rows(), [0, 1]);
+    }
+
+    // 押下で残した変更は、次の押下で捨てられる。ドラッグのあとで別の項目を選んでから、ドラッグした項目の
+    // 上で離しても、選択は変わらない。
+    #[test]
+    fn next_press_drops_what_a_dragged_press_left() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(1);
+        explorer.press_row(0, Instant::now());
+
+        explorer.press_row(2, Instant::now());
+        explorer.ctrl_press_row(1);
+        explorer.release_row(0);
+
+        assert_eq!(explorer.selected_rows(), [1, 2]);
+    }
+
+    // 選択された項目をCtrlで押して離すと、選択から外れる。押しただけでは外れないので、Ctrlを押したまま
+    // ドラッグできる。
+    #[test]
+    fn ctrl_press_and_release_on_a_selected_item_removes_it() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(1);
+
+        explorer.ctrl_press_row(0);
+        assert_eq!(explorer.selected_rows(), [0, 1]);
+
+        explorer.release_row(0);
+        assert_eq!(explorer.selected_rows(), [1]);
+    }
+
+    // 複数を選んでいても、矢印キーを押すと、移った項目だけが選ばれる。
+    #[test]
+    fn arrow_selects_only_the_item_moved_to() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(1);
+
+        explorer.move_selection(Arrow::Down, 1);
+
+        assert_eq!(explorer.selected_rows(), [2]);
+    }
+
+    // 空いた場所から矩形を広げると、矩形と重なる項目が選ばれる。
+    #[test]
+    fn widening_a_band_selects_the_items_it_overlaps() {
+        let folder = files(["a.txt", "b.txt", "c.txt", "d.txt"]);
+        let mut explorer = open(&folder);
+        let rows_of_ten = ItemLayout::list(0.0, 10.0);
+
+        explorer.start_band(Point::new(5.0, 5.0));
+        explorer.move_band(Point::new(50.0, 25.0), rows_of_ten);
+
+        assert_eq!(explorer.selected_rows(), [0, 1, 2]);
+        assert_eq!(
+            explorer.band(),
+            Some(Rect::between(Point::new(5.0, 5.0), Point::new(50.0, 25.0)))
+        );
+    }
+
+    // Ctrlを押して矩形を広げると、矩形の下の項目が前の選択に加わる。矩形を縮めると、加えた項目は外れる。
+    #[test]
+    fn ctrl_band_adds_to_the_earlier_selection() {
+        let folder = files(["a.txt", "b.txt", "c.txt", "d.txt"]);
+        let mut explorer = open(&folder);
+        let rows_of_ten = ItemLayout::list(0.0, 10.0);
+        explorer.press_row(3, Instant::now());
+
+        explorer.ctrl_start_band(Point::new(5.0, 5.0));
+        explorer.move_band(Point::new(50.0, 15.0), rows_of_ten);
+        assert_eq!(explorer.selected_rows(), [0, 1, 3]);
+
+        explorer.move_band(Point::new(50.0, 8.0), rows_of_ten);
+        assert_eq!(explorer.selected_rows(), [0, 3]);
+    }
+
+    // Ctrlなしで空いた場所を押すと、選択が消える。
+    #[test]
+    fn plain_band_start_clears_the_selection() {
+        let folder = files(["a.txt", "b.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(1, Instant::now());
+
+        explorer.start_band(Point::new(5.0, 500.0));
+
+        assert_eq!(explorer.selected_rows(), Vec::<usize>::new());
+    }
+
+    // 矩形を終えると、矩形は消え、選んだ項目は選ばれたままである。そのあとマウスを動かしても、選択は変わらない。
+    #[test]
+    fn ending_a_band_removes_it_and_keeps_the_selection() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        let rows_of_ten = ItemLayout::list(0.0, 10.0);
+        explorer.start_band(Point::new(5.0, 5.0));
+        explorer.move_band(Point::new(50.0, 15.0), rows_of_ten);
+
+        explorer.end_band();
+        explorer.move_band(Point::new(50.0, 25.0), rows_of_ten);
+
+        assert_eq!(explorer.band(), None);
+        assert_eq!(explorer.selected_rows(), [0, 1]);
+    }
+
+    // 選択された項目のドラッグでは、選択されたすべての項目が渡る。
+    #[test]
+    fn dragging_a_selected_item_carries_all_the_selected_items() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(2);
+
+        assert_eq!(
+            explorer.drag_paths(2),
+            [folder.path().join("a.txt"), folder.path().join("c.txt")]
+        );
+    }
+
+    // 選択されていない項目のドラッグでは、その項目だけが渡る。
+    #[test]
+    fn dragging_an_item_that_is_not_selected_carries_only_it() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(2);
+
+        assert_eq!(explorer.drag_paths(1), [folder.path().join("b.txt")]);
     }
 
     // 一覧では、グリッドの列の数によらず、下キーで次の行が選ばれる。
@@ -666,7 +1045,7 @@ mod tests {
 
         explorer.move_selection(Arrow::Down, 4);
 
-        assert_eq!(explorer.selected(), Some(1));
+        assert_eq!(explorer.selected_rows(), [1]);
     }
 
     // 選ばれたフォルダを開くと、そのフォルダの中身が並ぶ。
@@ -704,7 +1083,7 @@ mod tests {
 
         explorer.move_selection(Arrow::Right, 1);
 
-        assert_eq!(explorer.selected(), Some(0));
+        assert_eq!(explorer.selected_rows(), [0]);
     }
 
     // グリッドでは、下キーで、1行の列の数だけ後の項目が選ばれる。
@@ -720,7 +1099,7 @@ mod tests {
 
         explorer.move_selection(Arrow::Down, 2);
 
-        assert_eq!(explorer.selected(), Some(2));
+        assert_eq!(explorer.selected_rows(), [2]);
     }
 
     // 起動したときは、一覧で表示される。
