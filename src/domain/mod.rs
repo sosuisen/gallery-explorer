@@ -1,5 +1,6 @@
 //! Rules of the explorer that need no file system and no UI.
 
+mod band;
 mod breadcrumb;
 mod double_click;
 mod entry;
