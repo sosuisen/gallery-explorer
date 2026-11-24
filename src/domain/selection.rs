@@ -107,6 +107,21 @@ mod tests {
         assert_eq!(selection.focus(), Some(3));
     }
 
+    // 範囲を選ぶと、起点から指定の行までが選ばれ、前の選択は消える。起点は変わらない。
+    #[test]
+    fn selecting_a_range_selects_from_the_anchor_to_the_row() {
+        let mut selection = Selection::default();
+        selection.select_only(2);
+
+        selection.select_range(4);
+        assert_eq!(rows(&selection), [2, 3, 4]);
+        assert_eq!(selection.focus(), Some(4));
+
+        selection.select_range(0);
+        assert_eq!(rows(&selection), [0, 1, 2]);
+        assert_eq!(selection.focus(), Some(0));
+    }
+
     // 加えると、前の選択に足される。
     #[test]
     fn adding_an_item_keeps_the_earlier_selection() {
