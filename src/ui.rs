@@ -181,7 +181,7 @@ impl Component for ExplorerWindow {
             .children((
                 self.toolbar(context),
                 self.side_pane(context),
-                self.file_list(context),
+                self.file_pane(context),
                 self.status_bar(),
             ))
     }
@@ -318,52 +318,66 @@ impl ExplorerWindow {
 
     fn toolbar(&self, context: &ViewContext<Self>) -> View {
         let explorer = &self.explorer;
-        // The button names the view that it switches to.
-        let (view_icon, view_label) = match explorer.view_mode() {
-            ViewMode::List => (Symbol::ViewAll, "グリッド"),
-            ViewMode::Grid => (Symbol::List, "一覧"),
-        };
         let labels = crumbs(explorer.current())
             .into_iter()
             .map(|crumb| crumb.label);
-        let sort_row = SORT_ORDERS
-            .iter()
-            .position(|(order, _)| *order == explorer.sort_order());
 
         Grid::new()
             .grid_row(0)
             .grid_column_span(2)
             .margin(8.0)
             .column_spacing(8.0)
-            .columns([
-                GridLength::Auto,
-                GridLength::Auto,
-                GridLength::Auto,
-                GridLength::STAR,
-            ])
+            .columns([GridLength::Auto, GridLength::STAR])
             .children((
                 Button::new()
                     .grid_column(0)
                     .is_enabled(explorer.current().parent().is_some())
                     .on_click(context.message(Message::Up))
                     .content(icon_label(Symbol::Up, "上へ")),
-                Button::new()
+                BreadcrumbBar::new()
                     .grid_column(1)
+                    .vertical_alignment(VerticalAlignment::Center)
+                    .items_source(labels)
+                    .on_item_clicked(context.callback(Message::CrumbClicked)),
+            ))
+    }
+
+    /// The right pane: a toolbar for how the items are shown, and the items below it.
+    fn file_pane(&self, context: &ViewContext<Self>) -> View {
+        Grid::new()
+            .grid_row(1)
+            .grid_column(1)
+            .rows([GridLength::Auto, GridLength::STAR])
+            .children((self.file_toolbar(context), self.file_list(context)))
+    }
+
+    fn file_toolbar(&self, context: &ViewContext<Self>) -> View {
+        let explorer = &self.explorer;
+        // The button names the view that it switches to.
+        let (view_icon, view_label) = match explorer.view_mode() {
+            ViewMode::List => (Symbol::ViewAll, "グリッド"),
+            ViewMode::Grid => (Symbol::List, "一覧"),
+        };
+        let sort_row = SORT_ORDERS
+            .iter()
+            .position(|(order, _)| *order == explorer.sort_order());
+
+        StackPanel::new()
+            .grid_row(0)
+            .orientation(Orientation::Horizontal)
+            .margin(8.0)
+            .spacing(8.0)
+            .children((
+                Button::new()
                     .on_click(context.message(Message::ToggleViewMode))
                     .content(icon_label(view_icon, view_label)),
                 ComboBox::new()
-                    .grid_column(2)
-                    // A fixed width keeps the breadcrumb still when the chosen label changes.
+                    // A fixed width keeps the menu the same size when the chosen label changes.
                     .width(SORT_MENU_WIDTH)
                     .vertical_alignment(VerticalAlignment::Center)
                     .items_source(SORT_ORDERS.iter().map(|(_, label)| *label))
                     .selected_index(sort_row)
                     .on_selection_changed(context.callback(Message::SortChosen)),
-                BreadcrumbBar::new()
-                    .grid_column(3)
-                    .vertical_alignment(VerticalAlignment::Center)
-                    .items_source(labels)
-                    .on_item_clicked(context.callback(Message::CrumbClicked)),
             ))
     }
 
@@ -444,7 +458,6 @@ impl ExplorerWindow {
         // The border takes the right presses on the empty space around the items.
         Border::new()
             .grid_row(1)
-            .grid_column(1)
             // A border without a background receives no pointer events.
             .background(Color::transparent())
             .on_pointer_pressed(background_menu_handler(self.explorer.current(), context))
