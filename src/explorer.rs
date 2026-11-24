@@ -336,6 +336,11 @@ impl Explorer {
         self.selection = Selection::new(band.base.rows().chain(under), band.base.focus());
     }
 
+    /// Ends the band. The items under it stay selected.
+    pub fn end_band(&mut self) {
+        self.band = None;
+    }
+
     /// The rectangle of the band, while the user drags it.
     pub fn band(&self) -> Option<Rect> {
         self.band.as_ref().map(Band::rect)
