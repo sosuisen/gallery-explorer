@@ -978,6 +978,48 @@ mod tests {
         assert_eq!(explorer.selected_rows(), [0, 2, 3, 4]);
     }
 
+    // Shift+矢印キーで、起点から移った項目までが選ばれる。起点は動かない。
+    #[test]
+    fn shift_arrow_selects_from_the_anchor_to_the_item_moved_to() {
+        let folder = files(["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(1, Instant::now());
+
+        explorer.extend_selection(Arrow::Down, 1);
+        explorer.extend_selection(Arrow::Down, 1);
+        assert_eq!(explorer.selected_rows(), [1, 2, 3]);
+
+        explorer.extend_selection(Arrow::Up, 1);
+        explorer.extend_selection(Arrow::Up, 1);
+        explorer.extend_selection(Arrow::Up, 1);
+        assert_eq!(explorer.selected_rows(), [0, 1]);
+    }
+
+    // グリッドでは、Shift+下キーで、起点から真下の項目までが選ばれる。
+    #[test]
+    fn shift_down_in_the_grid_selects_up_to_the_tile_below() {
+        let folder = files(["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"]);
+        let mut explorer = open(&folder);
+        explorer.toggle_view_mode();
+        explorer.press_row(1, Instant::now());
+
+        explorer.extend_selection(Arrow::Down, 2);
+
+        assert_eq!(explorer.selected_rows(), [1, 2, 3]);
+    }
+
+    // 一覧では、Shift+左右キーを押しても、選択は変わらない。
+    #[test]
+    fn shift_left_and_right_in_the_list_keep_the_selection() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(1, Instant::now());
+
+        explorer.extend_selection(Arrow::Right, 1);
+
+        assert_eq!(explorer.selected_rows(), [1]);
+    }
+
     // 複数を選んでいても、矢印キーを押すと、移った項目だけが選ばれる。
     #[test]
     fn arrow_selects_only_the_item_moved_to() {
