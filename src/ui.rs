@@ -436,11 +436,7 @@ impl ExplorerWindow {
                     ViewMode::List => file_row(row, entry, source, is_selected, context),
                     ViewMode::Grid => file_tile(row, entry, source, is_selected, context),
                 };
-                let view = if is_selected {
-                    with_scroll_buttons(view, &self.focus_anchor)
-                } else {
-                    view
-                };
+                let view = with_scroll_buttons(view, is_selected.then_some(&self.focus_anchor));
                 (entry.name.clone(), view)
             });
         let panel: View = match mode {
@@ -571,8 +567,19 @@ fn grid_columns(width: f64) -> usize {
 /// Both buttons are in the same item. A posted key cannot hold Shift, so focus can only move
 /// forward. The buttons are 1px wide and transparent, so they hardly take any clicks from the
 /// item.
-fn with_scroll_buttons(item: View, anchor: &ElementRef<Button>) -> View {
-    Grid::new().children((item, scroll_button().element_ref(anchor), scroll_button()))
+///
+/// Every item is in the grid, and only the selected one has the buttons. A press selects the
+/// item. If only the selected item were in a grid, the press would replace the item's control
+/// with a new one, and the drag of the item could not start.
+fn with_scroll_buttons(item: View, anchor: Option<&ElementRef<Button>>) -> View {
+    let (first, second): (View, View) = match anchor {
+        Some(anchor) => (
+            scroll_button().element_ref(anchor).into(),
+            scroll_button().into(),
+        ),
+        None => (View::empty(), View::empty()),
+    };
+    Grid::new().children((item, first, second))
 }
 
 fn scroll_button() -> Button {
@@ -601,6 +608,7 @@ fn file_row(
         .corner_radius(4.0)
         .padding(Thickness::new(12.0, 4.0, 12.0, 4.0))
         .on_pointer_pressed(press_handler(row, entry, context))
+        .drag_storage_items(DragStorageItems::new([entry.path.clone()]))
         .content(
             StackPanel::new()
                 .orientation(Orientation::Horizontal)
@@ -632,6 +640,7 @@ fn file_tile(
         .margin(2.0)
         .padding(4.0)
         .on_pointer_pressed(press_handler(row, entry, context))
+        .drag_storage_items(DragStorageItems::new([entry.path.clone()]))
         .content(
             StackPanel::new().spacing(4.0).children((
                 preview(entry, source, GRID_PREVIEW),

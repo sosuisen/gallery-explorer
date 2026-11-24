@@ -33,3 +33,8 @@ debug = false
 
 [build-dependencies]
 winresource = "0.1.34"
+
+# windows-reactor 0.100.0 cannot drag files from the app to other apps. The copy in vendor/
+# adds it. See vendor/windows-reactor/GALLERY_EXPLORER.md.
+[patch.crates-io]
+windows-reactor = { path = "vendor/windows-reactor" }

@@ -26,6 +26,11 @@ Rustで書き、画面は`windows-reactor`(WinUI 3の宣言的UIライブラリ�
 | `ui` | 状態をWinUIのコントロールに変える | `ExplorerWindow`、`Message` |
 | `main` | エントリーポイント | `main` |
 
+`windows-reactor`は、crates.ioの版ではなく、`vendor/windows-reactor`のコピーを使う。
+アプリの`Cargo.toml`の`[patch.crates-io]`で差し替える。
+コピーには、ほかのアプリへファイルをドラッグする機能を足してある。
+理由は[ADR 003](adr/adr-003-vendored-windows-reactor-for-drag-out.md)に、変えた点は`vendor/windows-reactor/GALLERY_EXPLORER.md`にある。
+
 `ui`と`main`、`infra/shell.rs`、`infra/shell_thumbnail.rs`、`infra/app_icon.rs`にはテストがない。
 WinUIのウィンドウ、別のプログラムの起動、Windowsのシェルのサムネイル機能、exeに埋め込んだアイコンが要るためである。
 画面に関わる判断は、テストできるように`explorer`と`domain`に置く。
@@ -104,7 +109,9 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 `windows-reactor`は`ScrollViewer`をスクロールできないので、WinUIのキーボードフォーカスを使う。
 WinUIは、キーボードでフォーカスを受けた要素を見える位置までスクロールする。プログラムでフォーカスした要素はスクロールしない。
 
-1. `ui`は、選択した項目に、透明で幅1pxのボタンを2つ重ねる（`with_scroll_buttons`）。
+1. `ui`は、すべての項目を`Grid`で包み、選択した項目にだけ、透明で幅1pxのボタンを2つ重ねる（`with_scroll_buttons`）。
+   選択していない項目も`Grid`で包むのは、選択が変わっても項目の`Border`を作り直さないためである。
+   作り直すと、押した`Border`が消え、その項目のドラッグが始まらない。
 2. 矢印キーのたびに`key_moves`を増やす。`use_effect`は、新しい画面が出たあとで1つ目のボタンにフォーカスを移す。
 3. フォーカスが移ったら、`press_tab_soon`が50ms後に、キーを受けたウィンドウへTabを送る（`PostMessageW`）。
    新しいボタンの配置が決まる前にTabを送ると、前に選んでいた項目へスクロールしたためである。
@@ -112,6 +119,18 @@ WinUIは、キーボードでフォーカスを受けた要素を見える位置
 
 2つのボタンは同じ項目に置く。送るキーではShiftを押せないので、フォーカスは前にしか進められないためである。
 Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほかのアプリには届かない。
+
+### ほかのアプリへのドラッグ
+
+1. `ui`は、一覧の行とグリッドのタイルの`Border`に、その項目のパスを`drag_storage_items`で設定する。
+2. `windows-reactor`のコピーは、その`Border`の`CanDrag`を`true`にし、`DragStarting`を購読する。
+3. ドラッグが始まると、`DragStarting`が、許す操作をコピー・移動・リンクにし、`GetDeferral`でドラッグを待たせる。
+4. 別のスレッドが、パスから`StorageFile`か`StorageFolder`を作り、`DataPackage.SetStorageItemsReadOnly`で入れる。
+5. そのスレッドが、`DispatcherQueue`でUIスレッドにdeferralの`Complete`を頼む。ドラッグが進む。
+
+コピー・移動・リンクのどれにするかは、ドロップ先のアプリが、押されたキーで決める。
+エクスプローラーへドロップして移動になると、元のファイルは今のフォルダから消える。フォルダの監視が、一覧から消す。
+処理の詳細は`vendor/windows-reactor/GALLERY_EXPLORER.md`にある。
 
 ### 右クリックメニュー
 
@@ -212,8 +231,11 @@ Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほ
   フォルダを移ると、ツールバーの最初のボタンにフォーカスの枠が出る。
 - `MenuFlyout`がないので、右クリックメニューはWin32の`TrackPopupMenu`で出す。見た目は、WinUIではなく、古いWin32のメニューになる。
   このメニューは、キーボードでは選べない。キーがメニューに届かないためである。外をクリックすると閉じる。
+- 要素の`CanDrag`と`DragStarting`がないので、`vendor/windows-reactor`のコピーに足した。理由は[ADR 003](adr/adr-003-vendored-windows-reactor-for-drag-out.md)にある。
+  Win32のOLE（`SHDoDragDrop`）では、WinUIのウィンドウからドラッグを始めても、ドラッグが終わらない。
 
 ## ADRの一覧
 
 - [ADR 001: StackPanel for the File List](adr/adr-001-stackpanel-for-file-list.md)
 - [ADR 002: Win32 Hook for Cursor Keys and Tab for Scrolling](adr/adr-002-win32-hook-for-keys.md)
+- [ADR 003: Vendored windows-reactor for Dragging Files Out](adr/adr-003-vendored-windows-reactor-for-drag-out.md)

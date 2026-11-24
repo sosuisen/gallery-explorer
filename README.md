@@ -7,6 +7,10 @@ A file explorer for Windows with favorites. It is written in Rust with
 
 `windows-reactor` is a preview. Its API can change.
 
+The app uses a copy of `windows-reactor` 0.100.0 in `vendor/windows-reactor`, not the one on
+crates.io. The copy adds dragging files to other apps. The changes are listed in
+[vendor/windows-reactor/GALLERY_EXPLORER.md](vendor/windows-reactor/GALLERY_EXPLORER.md).
+
 ## Features
 
 - A folder tree with the drives at the top.
@@ -25,6 +29,8 @@ A file explorer for Windows with favorites. It is written in Rust with
 - A sort menu: by name or by modified time, each in ascending or descending order. Folders
   always come before files.
 - A right-click menu opens an item in File Explorer. A file is shown selected in its folder.
+- Drag a file or a folder from the list or the grid to File Explorer or to another app. The
+  keys that pick copy, move or a shortcut are the same as in File Explorer.
 - Live updates: files that are added to or removed from the open folder show up at once.
 - An app icon in File Explorer, on the taskbar, and in the title bar.
 
