@@ -899,7 +899,7 @@ mod tests {
         explorer.ctrl_press_row(1);
         explorer.ctrl_press_row(1);
 
-        explorer.release_row(2);
+        explorer.release_row(0);
 
         assert_eq!(explorer.selected_rows(), [0, 1]);
     }
