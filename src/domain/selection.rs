@@ -30,6 +30,15 @@ impl Selection {
         self.rows.insert(row);
         self.focus = Some(row);
     }
+
+    /// Takes `row` out of the selection. The focus stays where it is.
+    pub fn remove(&mut self, row: usize) {
+        self.rows.remove(&row);
+    }
+
+    pub fn contains(&self, row: usize) -> bool {
+        self.rows.contains(&row)
+    }
 }
 
 /// A cursor key that moves the selection.
