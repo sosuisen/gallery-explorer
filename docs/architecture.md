@@ -45,6 +45,10 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
   ファイルは、`ILCreateFromPathW`で項目にし、`SHOpenFolderAndSelectItems`で、選んだ状態で開く。
   `explorer.exe /select,<パス>`は使わない。Windows 11では、フォルダは開くが、ファイルが選ばれなかったためである。
 - 右クリックメニュー: Win32の`TrackPopupMenu`で出す。
+- 削除: `IFileOperation`の`DeleteItem`で、ごみ箱へ移す。
+  フラグは`FOF_ALLOWUNDO`、`FOF_NOCONFIRMATION`、`FOF_WANTNUKEWARNING`、`FOFX_RECYCLEONDELETE`である。
+  確認のダイアログは出さない。
+  ごみ箱に入らない項目だけは、Windowsが完全に削除してよいかを尋ねる。`FOF_NOCONFIRMATION`だけでは、黙って完全に削除されるためである。
 - サムネイル: `image_uri`で画像ファイルのパスを`file:///`のURIにし、`Image::source`に渡す。読み込みとデコードはWinUIが行う。
   `image_uri`は、日本語などASCII以外の文字をそのまま残し、空白・`#`・`%`などの記号だけをエンコードする。
   `Image::source_file`は使わない。ASCII以外の文字をUTF-8でパーセントエンコードするので、WinUIがファイルを開けないためである。
@@ -134,11 +138,14 @@ Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほ
 
 ### 右クリックメニュー
 
-1. 一覧の行とグリッドのタイルの`Border`は、右ボタンの押下で`Message::ShowMenu(パス, フォルダか)`を送る。
-   お気に入りの行とツリーの行も、`folder_menu_handler`で同じメッセージを送る。
+1. 一覧の行とグリッドのタイルの`Border`は、右ボタンの押下で`Message::ShowItemMenu(パス, フォルダか)`を送る。
+   お気に入りの行とツリーの行は、`folder_menu_handler`で`Message::ShowFolderMenu(パス)`を送る。
 2. `update`が`popup_menu`を呼ぶ。`popup_menu`は、マウスカーソルの位置にWin32のメニューを出し、選ばれた項目の番号を返す。
    メニューが閉じるまで、`TrackPopupMenu`の中でメッセージループが回る。
 3. 「エクスプローラーで開く」が選ばれると、`show_in_explorer`がエクスプローラーで開く。
+4. 一覧とグリッドのメニューには「削除」もある。選ばれると、`move_to_recycle_bin`がごみ箱へ移す。
+   一覧からは、フォルダの監視が消す。
+   お気に入りとツリーのメニューには「削除」を出さない。
 
 ツリーの行は`Button`なので、行全体を透明な背景の`Border`で包み、そこで右ボタンの押下を受け取る。
 `Button`には、押下のイベントがないためである。
