@@ -158,17 +158,16 @@ impl Explorer {
     /// Shows new items in place of the old ones. The selected item stays selected while it is
     /// still there.
     fn replace_entries(&mut self, entries: Vec<Entry>) {
-        let path_of = |row: usize| self.entries.get(row).map(|entry| entry.path.clone());
-        let selected: Vec<PathBuf> = self.selection.rows().filter_map(path_of).collect();
-        let focus = self.selection.focus().and_then(path_of);
-        let row_of = |path: &PathBuf| entries.iter().position(|entry| &entry.path == path);
+        let old_entries = &self.entries;
+        let new_row = |row: usize| {
+            let path = &old_entries.get(row)?.path;
+            entries.iter().position(|entry| &entry.path == path)
+        };
+        let selection = self.selection.map_rows(new_row);
         // The rows may move, so a press or a band before the change must not act on the rows
         // after it.
         self.forget_presses();
-        self.selection = Selection::new(
-            selected.iter().filter_map(row_of),
-            focus.as_ref().and_then(row_of),
-        );
+        self.selection = selection;
         self.entries = entries;
     }
 
@@ -366,7 +365,8 @@ impl Explorer {
         };
         band.end = point;
         let under = layout.items_in(band.rect(), self.entries.len());
-        self.selection = Selection::new(band.base.rows().chain(under), band.base.focus());
+        self.selection = band.base.clone();
+        self.selection.extend(under);
     }
 
     /// Ends the band. The items under it stay selected.

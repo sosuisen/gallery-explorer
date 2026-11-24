@@ -12,13 +12,19 @@ pub struct Selection {
 }
 
 impl Selection {
-    /// Selects `rows`, with the focus on `focus`.
-    pub fn new(rows: impl IntoIterator<Item = usize>, focus: Option<usize>) -> Self {
+    /// The same selection after the rows moved. `new_row` gives the new row of an old one, or
+    /// None when the row is gone. A gone row leaves the selection.
+    pub fn map_rows(&self, new_row: impl Fn(usize) -> Option<usize>) -> Self {
         Self {
-            rows: rows.into_iter().collect(),
-            focus,
-            anchor: focus,
+            rows: self.rows().filter_map(&new_row).collect(),
+            focus: self.focus.and_then(&new_row),
+            anchor: self.anchor.and_then(&new_row),
         }
+    }
+
+    /// Adds `rows` to the selection. The focus and the anchor stay.
+    pub fn extend(&mut self, rows: impl IntoIterator<Item = usize>) {
+        self.rows.extend(rows);
     }
 
     /// The selected rows, in ascending order.
