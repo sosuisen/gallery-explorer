@@ -178,10 +178,6 @@ impl Explorer {
         self.favorites.paths()
     }
 
-    pub fn is_current_favorite(&self) -> bool {
-        self.favorites.contains(&self.current)
-    }
-
     pub fn is_favorite(&self, path: &Path) -> bool {
         self.favorites.contains(path)
     }
