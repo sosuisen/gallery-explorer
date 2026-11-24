@@ -102,6 +102,20 @@ mod tests {
         assert_eq!(selection.focus(), Some(1));
     }
 
+    // 外すと、その項目だけが選択から消える。
+    #[test]
+    fn removing_an_item_keeps_the_others() {
+        let mut selection = Selection::default();
+        selection.select_only(1);
+        selection.add(3);
+
+        selection.remove(1);
+
+        assert_eq!(rows(&selection), [3]);
+        assert!(!selection.contains(1));
+        assert!(selection.contains(3));
+    }
+
     // 何も選ばれていないときに矢印キーを押すと、最初の項目が選ばれる。
     #[test]
     fn arrow_without_a_selection_selects_the_first_item() {
