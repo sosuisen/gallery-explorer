@@ -774,6 +774,19 @@ mod tests {
         assert_eq!(explorer.selected_rows(), [1]);
     }
 
+    // 複数を選んでいても、矢印キーを押すと、移った項目だけが選ばれる。
+    #[test]
+    fn arrow_selects_only_the_item_moved_to() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(1);
+
+        explorer.move_selection(Arrow::Down, 1);
+
+        assert_eq!(explorer.selected_rows(), [2]);
+    }
+
     // 一覧では、グリッドの列の数によらず、下キーで次の行が選ばれる。
     #[test]
     fn down_in_the_list_selects_the_next_row() {
