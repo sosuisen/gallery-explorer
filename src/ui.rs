@@ -176,10 +176,9 @@ impl Component for ExplorerWindow {
         });
 
         Grid::new()
-            .rows([GridLength::Auto, GridLength::STAR, GridLength::Auto])
+            .rows([GridLength::STAR, GridLength::Auto])
             .columns([GridLength::Pixel(SIDE_WIDTH), GridLength::STAR])
             .children((
-                self.toolbar(context),
                 self.side_pane(context),
                 self.file_pane(context),
                 self.status_bar(),
@@ -316,7 +315,7 @@ impl ExplorerWindow {
         self.load_previews(context);
     }
 
-    fn toolbar(&self, context: &ViewContext<Self>) -> View {
+    fn path_bar(&self, context: &ViewContext<Self>) -> View {
         let explorer = &self.explorer;
         let labels = crumbs(explorer.current())
             .into_iter()
@@ -324,7 +323,6 @@ impl ExplorerWindow {
 
         Grid::new()
             .grid_row(0)
-            .grid_column_span(2)
             .margin(8.0)
             .column_spacing(8.0)
             .columns([GridLength::Auto, GridLength::STAR])
@@ -342,13 +340,18 @@ impl ExplorerWindow {
             ))
     }
 
-    /// The right pane: a toolbar for how the items are shown, and the items below it.
+    /// The right pane: the path of the current folder, a toolbar for how the items are shown,
+    /// and the items.
     fn file_pane(&self, context: &ViewContext<Self>) -> View {
         Grid::new()
-            .grid_row(1)
+            .grid_row(0)
             .grid_column(1)
-            .rows([GridLength::Auto, GridLength::STAR])
-            .children((self.file_toolbar(context), self.file_list(context)))
+            .rows([GridLength::Auto, GridLength::Auto, GridLength::STAR])
+            .children((
+                self.path_bar(context),
+                self.file_toolbar(context),
+                self.file_list(context),
+            ))
     }
 
     fn file_toolbar(&self, context: &ViewContext<Self>) -> View {
@@ -363,9 +366,10 @@ impl ExplorerWindow {
             .position(|(order, _)| *order == explorer.sort_order());
 
         StackPanel::new()
-            .grid_row(0)
+            .grid_row(1)
             .orientation(Orientation::Horizontal)
-            .margin(8.0)
+            // The path bar above already leaves a margin.
+            .margin(Thickness::new(8.0, 0.0, 8.0, 8.0))
             .spacing(8.0)
             .children((
                 Button::new()
@@ -400,7 +404,7 @@ impl ExplorerWindow {
             .into_iter()
             .map(|row| (key(&row.path), tree_row(&row, context)));
 
-        ScrollViewer::new().grid_row(1).grid_column(0).content(
+        ScrollViewer::new().grid_row(0).grid_column(0).content(
             StackPanel::new().margin(8.0).spacing(4.0).children((
                 heading("お気に入り"),
                 // Unlike the file list, the favorites use a ListView for its drag to reorder.
@@ -457,7 +461,7 @@ impl ExplorerWindow {
 
         // The border takes the right presses on the empty space around the items.
         Border::new()
-            .grid_row(1)
+            .grid_row(2)
             // A border without a background receives no pointer events.
             .background(Color::transparent())
             .on_pointer_pressed(background_menu_handler(self.explorer.current(), context))
@@ -472,7 +476,7 @@ impl ExplorerWindow {
                 .foreground(ThemeBrush::SystemCritical),
             None => TextBlock::new().text(format!("{}個の項目", explorer.entries().len())),
         };
-        text.grid_row(2).grid_column_span(2).margin(8.0).into()
+        text.grid_row(1).grid_column_span(2).margin(8.0).into()
     }
 }
 
