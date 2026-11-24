@@ -10,6 +10,14 @@ pub struct Selection {
 }
 
 impl Selection {
+    /// Selects `rows`, with the focus on `focus`.
+    pub fn new(rows: impl IntoIterator<Item = usize>, focus: Option<usize>) -> Self {
+        Self {
+            rows: rows.into_iter().collect(),
+            focus,
+        }
+    }
+
     /// The selected rows, in ascending order.
     pub fn rows(&self) -> impl Iterator<Item = usize> + '_ {
         self.rows.iter().copied()

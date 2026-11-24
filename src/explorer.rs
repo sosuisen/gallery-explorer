@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::domain::{
-    Arrow, DoubleClick, Entry, Favorites, SortOrder, Tree, TreeRow, move_selection, resolve_crumb,
-    sort_entries,
+    Arrow, DoubleClick, Entry, Favorites, Selection, SortOrder, Tree, TreeRow, move_selection,
+    resolve_crumb, sort_entries,
 };
 use crate::infra::{FavoritesStore, child_folders, read_folder};
 
@@ -28,7 +28,7 @@ pub struct Explorer {
     covers: HashMap<PathBuf, PathBuf>,
     /// The shell thumbnails of files that are not images, by file path. They are encoded images.
     thumbnails: HashMap<PathBuf, Arc<[u8]>>,
-    selected: Option<usize>,
+    selection: Selection,
     view_mode: ViewMode,
     sort_order: SortOrder,
     error: Option<String>,
@@ -54,7 +54,7 @@ impl Explorer {
             entries: Vec::new(),
             covers: HashMap::new(),
             thumbnails: HashMap::new(),
-            selected: None,
+            selection: Selection::default(),
             view_mode: ViewMode::List,
             sort_order: SortOrder::default(),
             error: None,
@@ -78,7 +78,12 @@ impl Explorer {
     }
 
     pub fn selected(&self) -> Option<usize> {
-        self.selected
+        self.selection.focus()
+    }
+
+    /// The selected rows, in ascending order.
+    pub fn selected_rows(&self) -> Vec<usize> {
+        self.selection.rows().collect()
     }
 
     pub fn error(&self) -> Option<&str> {
@@ -119,14 +124,16 @@ impl Explorer {
     /// Shows new items in place of the old ones. The selected item stays selected while it is
     /// still there.
     fn replace_entries(&mut self, entries: Vec<Entry>) {
-        let selected = self
-            .selected
-            .and_then(|row| self.entries.get(row))
-            .map(|entry| entry.path.clone());
+        let path_of = |row: usize| self.entries.get(row).map(|entry| entry.path.clone());
+        let selected: Vec<PathBuf> = self.selection.rows().filter_map(path_of).collect();
+        let focus = self.selection.focus().and_then(path_of);
+        let row_of = |path: &PathBuf| entries.iter().position(|entry| &entry.path == path);
         // The rows may move, so a press before the change must not pair with one after it.
         self.clicks.reset();
-        self.selected =
-            selected.and_then(|path| entries.iter().position(|entry| entry.path == path));
+        self.selection = Selection::new(
+            selected.iter().filter_map(row_of),
+            focus.as_ref().and_then(row_of),
+        );
         self.entries = entries;
     }
 
@@ -194,7 +201,7 @@ impl Explorer {
                 self.entries = entries;
                 self.covers.clear();
                 self.thumbnails.clear();
-                self.selected = None;
+                self.selection = Selection::default();
                 self.clicks.reset();
                 self.error = None;
             }
@@ -210,7 +217,7 @@ impl Explorer {
             Ok(entries) => self.replace_entries(entries),
             Err(error) => {
                 self.entries.clear();
-                self.selected = None;
+                self.selection = Selection::default();
                 let current = self.current.clone();
                 self.fail(&current, &error);
             }
@@ -234,11 +241,16 @@ impl Explorer {
     /// A double click on a folder shows that folder. A double click on a file returns its path,
     /// and the caller opens it.
     pub fn press_row(&mut self, row: usize, at: Instant) -> Option<PathBuf> {
-        self.selected = Some(row);
+        self.selection.select_only(row);
         if !self.clicks.press(row, at) {
             return None;
         }
         self.open_selected()
+    }
+
+    /// Adds the pressed row to the selection.
+    pub fn ctrl_press_row(&mut self, row: usize) {
+        self.selection.add(row);
     }
 
     /// Moves the selection with a cursor key. columns is the number of tiles in one row of the
@@ -249,13 +261,14 @@ impl Explorer {
             ViewMode::List => 1,
             ViewMode::Grid => columns,
         };
-        self.selected = move_selection(self.selected, self.entries.len(), columns, arrow);
+        let moved = move_selection(self.selection.focus(), self.entries.len(), columns, arrow);
+        self.selection = Selection::new(moved, moved);
     }
 
     /// Opens the selected item. A folder is shown. For a file, its path is returned, and the
     /// caller opens it.
     pub fn open_selected(&mut self) -> Option<PathBuf> {
-        let entry = self.entries.get(self.selected?)?.clone();
+        let entry = self.entries.get(self.selection.focus()?)?.clone();
         if entry.is_folder() {
             self.navigate(&entry.path);
             None
