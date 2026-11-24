@@ -903,6 +903,31 @@ mod tests {
         assert_eq!(explorer.selected_rows(), [0, 1]);
     }
 
+    // 選択された項目のドラッグでは、選択されたすべての項目が渡る。
+    #[test]
+    fn dragging_a_selected_item_carries_all_the_selected_items() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(2);
+
+        assert_eq!(
+            explorer.drag_paths(2),
+            [folder.path().join("a.txt"), folder.path().join("c.txt")]
+        );
+    }
+
+    // 選択されていない項目のドラッグでは、その項目だけが渡る。
+    #[test]
+    fn dragging_an_item_that_is_not_selected_carries_only_it() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(2);
+
+        assert_eq!(explorer.drag_paths(1), [folder.path().join("b.txt")]);
+    }
+
     // 一覧では、グリッドの列の数によらず、下キーで次の行が選ばれる。
     #[test]
     fn down_in_the_list_selects_the_next_row() {
