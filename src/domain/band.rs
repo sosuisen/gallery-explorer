@@ -55,4 +55,14 @@ mod tests {
             }
         );
     }
+
+    // 一覧では、矩形と高さが重なる行が選ばれる。
+    #[test]
+    fn list_rows_that_overlap_the_rectangle_in_height_are_in_it() {
+        // Rows of 10px below a margin of 4px: row 1 spans 14 to 24, row 2 spans 24 to 34.
+        let layout = ItemLayout::list(4.0, 10.0);
+        let rect = Rect::between(Point::new(500.0, 20.0), Point::new(600.0, 25.0));
+
+        assert_eq!(layout.items_in(rect, 5), [1, 2]);
+    }
 }
