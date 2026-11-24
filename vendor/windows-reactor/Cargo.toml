@@ -70,6 +70,24 @@ version = "0.100.0"
 features = ["std"]
 default-features = false
 
+# Added in GalleryExplorer: the types of a drag of files to other apps. The crate's own
+# bindings have no DataPackage and no StorageFile.
+[dependencies.windows]
+version = "0.62.2"
+features = [
+    "ApplicationModel_DataTransfer",
+    "Foundation_Collections",
+    "Storage",
+    "Storage_Search",
+    "Storage_Streams",
+    "Win32_System_Com",
+]
+
+# The collections of the windows crate above. The crate's own windows-collections is newer.
+[dependencies.windows-collections-03]
+package = "windows-collections"
+version = "0.3.2"
+
 [dependencies.windows-threading]
 version = "0.100.0"
 default-features = false

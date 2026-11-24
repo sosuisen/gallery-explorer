@@ -1111,6 +1111,9 @@ pub fn set_property(
         (Handle::Border(_), PropertyId::BorderAllowDrop, PropertyValue::DragDropPolicy(_)) => {
             Err(RuntimeError::UnsupportedKind)
         }
+        (Handle::Border(_), PropertyId::BorderCanDrag, PropertyValue::DragStorageItems(_)) => {
+            Err(RuntimeError::UnsupportedKind)
+        }
         (
             Handle::BreadcrumbBar(control),
             PropertyId::BreadcrumbBarItemsSource,
@@ -3059,6 +3062,7 @@ pub fn clear_property(handle: &Handle, property: PropertyId) -> Result<(), Runti
             Err(RuntimeError::UnsupportedKind)
         }
         (Handle::Border(_), PropertyId::BorderAllowDrop) => Err(RuntimeError::UnsupportedKind),
+        (Handle::Border(_), PropertyId::BorderCanDrag) => Err(RuntimeError::UnsupportedKind),
         (Handle::BreadcrumbBar(_), PropertyId::BreadcrumbBarItemsSource) => dependency_object
             .ClearValue(&bindings::BreadcrumbBar::ItemsSourceProperty().map_err(native_error)?)
             .map_err(native_error),

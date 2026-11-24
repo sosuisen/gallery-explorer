@@ -1676,6 +1676,23 @@ pub enum DroppedData {
     Unsupported,
 }
 
+/// Files and folders that the user can drag from an element to other apps.
+///
+/// Setting it on an element sets `CanDrag`. When a drag starts, the element puts the items in
+/// the drag as storage items, so File Explorer and other apps can take them.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DragStorageItems {
+    pub paths: Vec<std::path::PathBuf>,
+}
+
+impl DragStorageItems {
+    pub fn new(paths: impl IntoIterator<Item = std::path::PathBuf>) -> Self {
+        Self {
+            paths: paths.into_iter().collect(),
+        }
+    }
+}
+
 /// Material used behind a window's content.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum WindowBackdrop {

@@ -709,6 +709,7 @@ pub mod public {
         scale_transition: Property<std::time::Duration>,
         capture_pointer_on_press: Property<bool>,
         drop_policy: Property<DragDropPolicy>,
+        drag_storage_items: Property<DragStorageItems>,
         events: Option<std::rc::Rc<BorderEvents>>,
         element_state: Option<std::rc::Rc<ElementState>>,
         content: Option<Box<Element>>,
@@ -837,6 +838,11 @@ pub mod public {
         pub fn drop_policy(mut self, value: impl Into<Option<DragDropPolicy>>) -> Self {
             let value = value.into();
             self.drop_policy = Property::from(value);
+            self
+        }
+        pub fn drag_storage_items(mut self, value: impl Into<Option<DragStorageItems>>) -> Self {
+            let value = value.into();
+            self.drag_storage_items = Property::from(value);
             self
         }
         pub fn on_drag_enter(mut self, callback: impl IntoPayloadCallback<DragKind>) -> Self {
@@ -6521,6 +6527,7 @@ pub mod public {
                         scale_transition,
                         capture_pointer_on_press,
                         drop_policy,
+                        drag_storage_items,
                         events,
                         element_state,
                         content,
@@ -6538,6 +6545,7 @@ pub mod public {
                             scale_transition,
                             capture_pointer_on_press,
                             drop_policy,
+                            drag_storage_items,
                             events,
                         })),
                         reference: None,
@@ -8265,6 +8273,7 @@ pub mod public {
                         && value.scale_transition == mounted.scale_transition
                         && value.capture_pointer_on_press == mounted.capture_pointer_on_press
                         && value.drop_policy == mounted.drop_policy
+                        && value.drag_storage_items == mounted.drag_storage_items
                         && value.events == mounted.events
                 }
                 (Self::BreadcrumbBar(value), MountedProps::BreadcrumbBar(mounted)) => {
@@ -9598,6 +9607,13 @@ impl MountedPropsExt for MountedProps {
                     match &values.drop_policy {
                         Property::Inherited => None,
                         Property::Set(value) => Some(PropertyValueRef::DragDropPolicy(value)),
+                    },
+                );
+                visit(
+                    PropertyId::BorderCanDrag,
+                    match &values.drag_storage_items {
+                        Property::Inherited => None,
+                        Property::Set(value) => Some(PropertyValueRef::DragStorageItems(value)),
                     },
                 );
             }
@@ -12687,6 +12703,7 @@ pub(crate) struct BorderMountedProps {
     scale_transition: Property<std::time::Duration>,
     capture_pointer_on_press: Property<bool>,
     drop_policy: Property<DragDropPolicy>,
+    drag_storage_items: Property<DragStorageItems>,
     events: Option<std::rc::Rc<BorderEvents>>,
 }
 impl PartialEq for BorderMountedProps {
@@ -12701,6 +12718,7 @@ impl PartialEq for BorderMountedProps {
             && self.scale_transition == other.scale_transition
             && self.capture_pointer_on_press == other.capture_pointer_on_press
             && self.drop_policy == other.drop_policy
+            && self.drag_storage_items == other.drag_storage_items
             && self.events == other.events
     }
 }
@@ -13862,6 +13880,7 @@ pub enum PropertyId {
     BorderScaleTransition,
     BorderCapturePointerOnPress,
     BorderAllowDrop,
+    BorderCanDrag,
     BreadcrumbBarItemsSource,
     StackPanelOrientation,
     StackPanelSpacing,
@@ -14140,6 +14159,7 @@ pub enum PropertyValue {
     Color(Color),
     CornerRadius(CornerRadius),
     DragDropPolicy(DragDropPolicy),
+    DragStorageItems(DragStorageItems),
     Duration(std::time::Duration),
     EncodedImage(EncodedImage),
     F64(f64),
@@ -14181,6 +14201,7 @@ impl PartialEq for PropertyValue {
             (Self::Color(left), Self::Color(right)) => left == right,
             (Self::CornerRadius(left), Self::CornerRadius(right)) => left == right,
             (Self::DragDropPolicy(left), Self::DragDropPolicy(right)) => left == right,
+            (Self::DragStorageItems(left), Self::DragStorageItems(right)) => left == right,
             (Self::Duration(left), Self::Duration(right)) => left == right,
             (Self::EncodedImage(left), Self::EncodedImage(right)) => left == right,
             (Self::F64(left), Self::F64(right)) => f64_eq(*left, *right),
@@ -14243,6 +14264,7 @@ pub enum PropertyValueRef<'a> {
     Color(Color),
     CornerRadius(&'a CornerRadius),
     DragDropPolicy(&'a DragDropPolicy),
+    DragStorageItems(&'a DragStorageItems),
     Duration(std::time::Duration),
     EncodedImage(&'a EncodedImage),
     F64(f64),
@@ -14284,6 +14306,7 @@ impl PropertyValueRef<'_> {
             (Self::Color(left), PropertyValue::Color(right)) => left == *right,
             (Self::CornerRadius(left), PropertyValue::CornerRadius(right)) => left == right,
             (Self::DragDropPolicy(left), PropertyValue::DragDropPolicy(right)) => left == right,
+            (Self::DragStorageItems(left), PropertyValue::DragStorageItems(right)) => left == right,
             (Self::Duration(left), PropertyValue::Duration(right)) => left == *right,
             (Self::EncodedImage(left), PropertyValue::EncodedImage(right)) => left == right,
             (Self::F64(left), PropertyValue::F64(right)) => f64_eq(left, *right),
@@ -14358,6 +14381,7 @@ impl PropertyValueRef<'_> {
             Self::Color(value) => PropertyValue::Color(value),
             Self::CornerRadius(value) => PropertyValue::CornerRadius(value.clone()),
             Self::DragDropPolicy(value) => PropertyValue::DragDropPolicy(value.clone()),
+            Self::DragStorageItems(value) => PropertyValue::DragStorageItems(value.clone()),
             Self::Duration(value) => PropertyValue::Duration(value),
             Self::EncodedImage(value) => PropertyValue::EncodedImage(value.clone()),
             Self::F64(value) => PropertyValue::F64(value),
@@ -14426,6 +14450,11 @@ impl From<CornerRadius> for PropertyValue {
 impl From<DragDropPolicy> for PropertyValue {
     fn from(value: DragDropPolicy) -> Self {
         Self::DragDropPolicy(value)
+    }
+}
+impl From<DragStorageItems> for PropertyValue {
+    fn from(value: DragStorageItems) -> Self {
+        Self::DragStorageItems(value)
     }
 }
 impl From<std::time::Duration> for PropertyValue {
@@ -15063,6 +15092,17 @@ const BORDER_PROPERTIES: &[PropertyDescriptor] = &[
         name: "AllowDrop",
         field: "drop_policy",
         value: "DragDropPolicy",
+        interface: "Microsoft.UI.Xaml.IUIElement",
+        clearable: true,
+        feedback: None,
+        feedback_contract: None,
+        observes_feedback: false,
+    },
+    PropertyDescriptor {
+        id: PropertyId::BorderCanDrag,
+        name: "CanDrag",
+        field: "drag_storage_items",
+        value: "DragStorageItems",
         interface: "Microsoft.UI.Xaml.IUIElement",
         clearable: true,
         feedback: None,

@@ -30,6 +30,7 @@ mod app_shim;
 pub use app_shim::*;
 mod bootstrap;
 mod content_dialog;
+mod drag_source;
 #[cfg(feature = "test")]
 pub(crate) use content_dialog::LiveContentDialogState;
 use content_dialog::{ContentDialogAction, ContentDialogScheduler};
@@ -156,6 +157,7 @@ pub struct WinUiRuntime {
     controlled_collection_indices: HashMap<NodeId, i32>,
     content_dialogs: Rc<RefCell<ContentDialogScheduler>>,
     drop_policies: Rc<RefCell<HashMap<NodeId, DragDropPolicy>>>,
+    drag_sources: RefCell<HashMap<NodeId, drag_source::DragSource>>,
     flyouts: HashMap<NodeId, (bindings::Flyout, NodeId)>,
     owned_menus: HashMap<NodeId, NativeOwnedMenu>,
     pointer_capture: Rc<RefCell<HashMap<NodeId, bool>>>,
@@ -1940,6 +1942,13 @@ impl WinUiRuntime {
                                 }),
                             _ => Err(RuntimeError::UnsupportedKind),
                         }
+                    } else if *property == PropertyId::BorderCanDrag {
+                        match value {
+                            PropertyValue::DragStorageItems(items) => {
+                                self.set_drag_storage_items(*node, items.paths.clone())
+                            }
+                            _ => Err(RuntimeError::UnsupportedKind),
+                        }
                     } else {
                         target.set(*property, value)
                     };
@@ -2010,6 +2019,12 @@ impl WinUiRuntime {
                             .SetAllowDrop(false)
                             .map_err(native_error)?;
                         self.drop_policies.borrow_mut().remove(node);
+                        Ok(())
+                    } else if *property == PropertyId::BorderCanDrag {
+                        if self.drag_sources.borrow_mut().remove(node).is_some() {
+                            drag_source::DragSource::stop(&self.ui_element(*node)?)
+                                .map_err(native_error)?;
+                        }
                         Ok(())
                     } else {
                         target.clear(*property)
@@ -2917,6 +2932,21 @@ impl WinUiRuntime {
         }
     }
 
+    fn set_drag_storage_items(
+        &self,
+        node: NodeId,
+        paths: Vec<std::path::PathBuf>,
+    ) -> Result<(), RuntimeError> {
+        if let Some(source) = self.drag_sources.borrow().get(&node) {
+            source.set_paths(paths);
+            return Ok(());
+        }
+        let source = drag_source::DragSource::start(&self.ui_element(node)?, paths)
+            .map_err(native_error)?;
+        self.drag_sources.borrow_mut().insert(node, source);
+        Ok(())
+    }
+
     fn ui_element(&self, node: NodeId) -> Result<UIElement, RuntimeError> {
         if let Some(handle) = self.handles.get(&node) {
             handle.ui_element().map_err(native_error)
@@ -3625,6 +3655,7 @@ impl NativeRuntime for WinUiRuntime {
         self.host_events.borrow_mut().clear();
         self.feedback.borrow_mut().clear();
         self.drop_policies.borrow_mut().clear();
+        self.drag_sources.borrow_mut().clear();
         self.pointer_capture.borrow_mut().clear();
         self.resource_override_keys.clear();
         self.controlled_collection_indices.clear();
@@ -4025,6 +4056,7 @@ impl WinUiRuntime {
         self.observation_subscriptions
             .retain(|(subscription_node, _), _| *subscription_node != node);
         self.drop_policies.borrow_mut().remove(&node);
+        self.drag_sources.borrow_mut().remove(&node);
         self.pointer_capture.borrow_mut().remove(&node);
         if self.resource_override_keys.contains_key(&node) {
             self.clear_resource_overrides(node)?;

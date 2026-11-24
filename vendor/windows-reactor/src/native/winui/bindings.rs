@@ -3238,6 +3238,100 @@ unsafe impl Send for DragOperationDeferral {}
 unsafe impl Sync for DragOperationDeferral {}
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DragStartingEventArgs(windows_core::IUnknown);
+windows_core::imp::interface_hierarchy!(
+    DragStartingEventArgs,
+    windows_core::IUnknown,
+    windows_core::IInspectable
+);
+windows_core::imp::required_hierarchy!(DragStartingEventArgs, RoutedEventArgs);
+impl windows_core::RuntimeType for DragStartingEventArgs {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_class::<Self, IDragStartingEventArgs>();
+}
+unsafe impl windows_core::Interface for DragStartingEventArgs {
+    type Vtable = <IDragStartingEventArgs as windows_core::Interface>::Vtable;
+    const IID: windows_core::GUID = <IDragStartingEventArgs as windows_core::Interface>::IID;
+}
+impl core::ops::Deref for DragStartingEventArgs {
+    type Target = IDragStartingEventArgs;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+impl windows_core::RuntimeName for DragStartingEventArgs {
+    const NAME: &'static str = "Microsoft.UI.Xaml.DragStartingEventArgs";
+}
+unsafe impl Send for DragStartingEventArgs {}
+unsafe impl Sync for DragStartingEventArgs {}
+windows_core::imp::define_interface!(
+    IDragStartingEventArgs,
+    IDragStartingEventArgs_Vtbl,
+    0xad17bace_9613_5666_a31b_79a73fba77cf
+);
+impl windows_core::RuntimeType for IDragStartingEventArgs {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_interface::<Self>();
+}
+impl IDragStartingEventArgs {
+    /// The `Windows.ApplicationModel.DataTransfer.DataPackage` of the drag. The crate has no
+    /// binding of that class, so the caller casts the object.
+    pub(crate) fn Data(&self) -> windows_core::Result<windows_core::IInspectable> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).Data)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+        }
+    }
+    pub(crate) fn SetAllowedOperations(
+        &self,
+        value: DataPackageOperation,
+    ) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetAllowedOperations)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn GetDeferral(&self) -> windows_core::Result<DragOperationDeferral> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).GetDeferral)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+        }
+    }
+}
+#[repr(C)]
+pub struct IDragStartingEventArgs_Vtbl {
+    pub base__: windows_core::IInspectable_Vtbl,
+    Cancel: usize,
+    SetCancel: usize,
+    pub Data: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    DragUI: usize,
+    AllowedOperations: usize,
+    pub SetAllowedOperations: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        DataPackageOperation,
+    ) -> windows_core::HRESULT,
+    pub GetDeferral: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    GetPosition: usize,
+}
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DragUIOverride(windows_core::IUnknown);
 windows_core::imp::interface_hierarchy!(
     DragUIOverride,
@@ -19005,6 +19099,44 @@ impl windows_core::RuntimeType for IUIElement {
         windows_core::imp::ConstBuffer::for_interface::<Self>();
 }
 impl IUIElement {
+    pub(crate) fn SetCanDrag(&self, value: bool) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetCanDrag)(
+                windows_core::Interface::as_raw(self),
+                value,
+            )
+            .ok()
+        }
+    }
+    pub(crate) fn DragStarting<F>(&self, handler: F) -> windows_core::Result<windows_core::EventRevoker>
+    where
+        F: Fn(windows_core::Ref<UIElement>, windows_core::Ref<DragStartingEventArgs>) + 'static,
+    {
+        let handler: TypedEventHandler<UIElement, DragStartingEventArgs> = {
+            let com = windows_core::imp::DelegateBox::<
+                TypedEventHandler<UIElement, DragStartingEventArgs>,
+                F,
+            >::new(
+                &TypedEventHandlerBox::<UIElement, DragStartingEventArgs, F>::VTABLE,
+                handler,
+            );
+            unsafe { core::mem::transmute(windows_core::imp::box_new(com)) }
+        };
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            let token__ = (windows_core::Interface::vtable(self).DragStarting)(
+                windows_core::Interface::as_raw(self),
+                windows_core::Interface::as_raw(&handler),
+                &mut result__,
+            )
+            .map(|| result__)?;
+            Ok(windows_core::EventRevoker::new(
+                self.clone(),
+                token__,
+                windows_core::Interface::vtable(self).RemoveDragStarting,
+            ))
+        }
+    }
     pub(crate) fn SetAllowDrop(&self, value: bool) -> windows_core::Result<()> {
         unsafe {
             (windows_core::Interface::vtable(self).SetAllowDrop)(
@@ -19541,7 +19673,8 @@ pub struct IUIElement_Vtbl {
     IsDoubleTapEnabled: usize,
     SetIsDoubleTapEnabled: usize,
     CanDrag: usize,
-    SetCanDrag: usize,
+    pub SetCanDrag:
+        unsafe extern "system" fn(*mut core::ffi::c_void, bool) -> windows_core::HRESULT,
     IsRightTapEnabled: usize,
     SetIsRightTapEnabled: usize,
     IsHoldingEnabled: usize,
@@ -19667,8 +19800,13 @@ pub struct IUIElement_Vtbl {
     RemoveGotFocus: usize,
     LostFocus: usize,
     RemoveLostFocus: usize,
-    DragStarting: usize,
-    RemoveDragStarting: usize,
+    pub DragStarting: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+        *mut i64,
+    ) -> windows_core::HRESULT,
+    pub RemoveDragStarting:
+        unsafe extern "system" fn(*mut core::ffi::c_void, i64) -> windows_core::HRESULT,
     DropCompleted: usize,
     RemoveDropCompleted: usize,
     CharacterReceived: usize,
