@@ -38,6 +38,8 @@ impl Rect {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ItemLayout {
     margin: f64,
+    columns: usize,
+    item_width: f64,
     item_height: f64,
 }
 
@@ -46,18 +48,55 @@ impl ItemLayout {
     pub fn list(margin: f64, row_height: f64) -> Self {
         Self {
             margin,
+            columns: 1,
+            // Not INFINITY: the left edge multiplies the width by zero, which would give NaN.
+            item_width: f64::MAX,
             item_height: row_height,
         }
     }
 
-    /// The items among the first `count` items that overlap `rect`.
+    /// Tiles of `width` by `height`, `columns` in a row, filling the rows from the left, inside
+    /// `margin`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `columns` is zero.
+    pub fn grid(margin: f64, columns: usize, width: f64, height: f64) -> Self {
+        assert!(columns > 0, "a row holds at least one item");
+        Self {
+            margin,
+            columns,
+            item_width: width,
+            item_height: height,
+        }
+    }
+
+    /// The items among the first `count` items that overlap `rect`, in ascending order.
     pub fn items_in(&self, rect: Rect, count: usize) -> Vec<usize> {
         (0..count)
-            .filter(|&item| {
-                let top = self.margin + self.item_height * item as f64;
-                top < rect.bottom && top + self.item_height > rect.top
-            })
+            .filter(|&item| self.bounds(item).overlaps(rect))
             .collect()
+    }
+
+    fn bounds(&self, item: usize) -> Rect {
+        let left = self.margin + self.item_width * (item % self.columns) as f64;
+        let top = self.margin + self.item_height * (item / self.columns) as f64;
+        Rect {
+            left,
+            top,
+            right: left + self.item_width,
+            bottom: top + self.item_height,
+        }
+    }
+}
+
+impl Rect {
+    /// Whether the two rectangles share an area. Touching edges share none.
+    fn overlaps(&self, other: Rect) -> bool {
+        self.left < other.right
+            && other.left < self.right
+            && self.top < other.bottom
+            && other.top < self.bottom
     }
 }
 
