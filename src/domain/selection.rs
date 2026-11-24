@@ -1,3 +1,31 @@
+use std::collections::BTreeSet;
+
+/// The selected items, by row.
+///
+/// The focus is the row that the cursor keys move from, and the row that Enter opens.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Selection {
+    rows: BTreeSet<usize>,
+    focus: Option<usize>,
+}
+
+impl Selection {
+    /// The selected rows, in ascending order.
+    pub fn rows(&self) -> impl Iterator<Item = usize> + '_ {
+        self.rows.iter().copied()
+    }
+
+    pub fn focus(&self) -> Option<usize> {
+        self.focus
+    }
+
+    /// Selects `row` and nothing else.
+    pub fn select_only(&mut self, row: usize) {
+        self.rows = BTreeSet::from([row]);
+        self.focus = Some(row);
+    }
+}
+
 /// A cursor key that moves the selection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Arrow {
