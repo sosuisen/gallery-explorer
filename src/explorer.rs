@@ -742,6 +742,21 @@ mod tests {
         assert_eq!(explorer.selected_rows(), [1, 3]);
     }
 
+    // 読み直しても、起点は同じ項目のままである。前に項目が増えても、Shift+クリックの範囲はその項目から始まる。
+    #[test]
+    fn anchor_stays_on_its_item_through_a_refresh() {
+        let folder = files(["b.txt", "c.txt", "d.txt", "e.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(1, Instant::now());
+        explorer.shift_press_row(0);
+        fs::write(folder.path().join("a.txt"), "").unwrap();
+
+        explorer.refresh();
+        explorer.shift_press_row(4);
+
+        assert_eq!(explorer.selected_rows(), [2, 3, 4]);
+    }
+
     // 読み直すと、広げていた矩形は終わる。項目の位置が変わり、矩形の下の項目が変わるためである。
     #[test]
     fn refresh_ends_the_band() {
