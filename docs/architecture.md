@@ -87,12 +87,14 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 
 一覧は、`ScrollViewer`の中の`StackPanel`に、行ごとの`Border`を並べて作る。選択とダブルクリックは自前で扱う。
 
-選択は、`domain`の`Selection`で持つ。選ばれた行の集合と、フォーカスの行である。
+選択は、`domain`の`Selection`で持つ。選ばれた行の集合と、フォーカスの行と、起点の行である。
 フォーカスは、矢印キーで動かす起点で、Enterで開く行である。
+起点は、範囲の始まりの行である。Shiftなしで最後に選んだ行が、起点になる。
 選択された行は、灰色の背景と左のアクセント色の線で示す。
 
-1. 一覧の行の`Border`が、左ボタンの押下のたびに`Message::RowPressed(行, 時刻, Ctrlか)`を送る。
-   Ctrlは、`ui`の`ctrl_is_down`が`GetKeyState`で調べる。`windows-reactor`のポインターのイベントは、キーの状態を持たないためである。
+1. 一覧の行の`Border`が、左ボタンの押下のたびに`Message::RowPressed(行, 時刻, Modifiers)`を送る。
+   `Modifiers`は、押下のときにCtrlとShiftが押されていたかである。`Modifiers::now`が`GetKeyState`で調べる。`windows-reactor`のポインターのイベントは、キーの状態を持たないためである。
+   Shiftありなら、`Explorer::shift_press_row`が、起点から押された行までを選ぶ。CtrlとShiftの両方なら、`Explorer::ctrl_shift_press_row`が、その範囲を選択に加える。
 2. Ctrlなしなら、`Explorer::press_row`が、押された行だけを選択にする。
    ただし、押された行がすでに選ばれていれば、選択を変えない。離したときに、その行だけを選択にする。
    押したまま、選ばれたすべての項目をドラッグできるようにするためである。
@@ -137,6 +139,7 @@ WinUIのウィンドウ、別のプログラムの起動、Windowsのシェル�
 3. 矢印キーなら、`Explorer::move_selection`が`domain`の`move_selection`で次の選択を決める。
    グリッドでは、1行のタイルの数を渡す。`ui`は、`on_window_size`で受け取ったウィンドウの幅から、`grid_columns`で数を求める。
    一覧では、左右キーを無視し、1行を1項目として扱う。
+   フックがShiftの押下を見つけると、`Key::ShiftArrow`を送る。`Explorer::extend_selection`が、フォーカスを動かし、起点からフォーカスまでを選ぶ。
 4. Enterなら、`Explorer::open_selected`で開く。ダブルクリックと同じ処理である。
 5. Backspaceなら、`Explorer::go_up`で親フォルダへ移る。「上へ」ボタンと同じ処理である。
 
@@ -148,11 +151,14 @@ WinUIは、キーボードでフォーカスを受けた要素を見える位置
    選択していない項目も`Grid`で包むのは、選択が変わっても項目の`Border`を作り直さないためである。
    作り直すと、押した`Border`が消え、その項目のドラッグが始まらない。
 2. 矢印キーのたびに`key_moves`を増やす。`use_effect`は、新しい画面が出たあとで1つ目のボタンにフォーカスを移す。
+   Shiftが押されていれば、2つ目のボタンにフォーカスを移す（`ScrollButtons::start`）。
 3. フォーカスが移ったら、`press_tab_soon`が50ms後に、キーを受けたウィンドウへTabを送る（`PostMessageW`）。
    新しいボタンの配置が決まる前にTabを送ると、前に選んでいた項目へスクロールしたためである。
-4. Tabで、キーボードフォーカスが2つ目のボタンに移り、WinUIがその項目をスクロールして見せる。
+4. Tabで、キーボードフォーカスがもう1つのボタンに移り、WinUIがその項目をスクロールして見せる。
 
-2つのボタンは同じ項目に置く。送るキーではShiftを押せないので、フォーカスは前にしか進められないためである。
+2つのボタンは同じ項目に置く。Tabで、フォーカスが項目の外へ出ないためである。
+送るTabは、ユーザーが押しているShiftを離せない。そのため、Shift+矢印キーのあとは、Shift+Tabとして届き、フォーカスは後ろへ動く。
+そこで、Shiftが押されていれば、2つ目のボタンから始める。
 Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほかのアプリには届かない。
 
 ### ほかのアプリへのドラッグ
