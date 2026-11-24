@@ -3,10 +3,12 @@ use std::collections::BTreeSet;
 /// The selected items, by row.
 ///
 /// The focus is the row that the cursor keys move from, and the row that Enter opens.
+/// The anchor is the row that a range starts from. It is the row last selected without Shift.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Selection {
     rows: BTreeSet<usize>,
     focus: Option<usize>,
+    anchor: Option<usize>,
 }
 
 impl Selection {
@@ -15,6 +17,7 @@ impl Selection {
         Self {
             rows: rows.into_iter().collect(),
             focus,
+            anchor: focus,
         }
     }
 
@@ -31,11 +34,21 @@ impl Selection {
     pub fn select_only(&mut self, row: usize) {
         self.rows = BTreeSet::from([row]);
         self.focus = Some(row);
+        self.anchor = Some(row);
     }
 
-    /// Adds `row` to the selection and moves the focus to it.
+    /// Adds `row` to the selection and moves the focus and the anchor to it.
     pub fn add(&mut self, row: usize) {
         self.rows.insert(row);
+        self.focus = Some(row);
+        self.anchor = Some(row);
+    }
+
+    /// Selects the rows from the anchor to `row`, and nothing else. The focus moves to `row`, and
+    /// the anchor stays.
+    pub fn select_range(&mut self, row: usize) {
+        let anchor = self.anchor.unwrap_or(row);
+        self.rows = (anchor.min(row)..=anchor.max(row)).collect();
         self.focus = Some(row);
     }
 
