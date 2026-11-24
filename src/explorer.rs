@@ -158,17 +158,16 @@ impl Explorer {
     /// Shows new items in place of the old ones. The selected item stays selected while it is
     /// still there.
     fn replace_entries(&mut self, entries: Vec<Entry>) {
-        let path_of = |row: usize| self.entries.get(row).map(|entry| entry.path.clone());
-        let selected: Vec<PathBuf> = self.selection.rows().filter_map(path_of).collect();
-        let focus = self.selection.focus().and_then(path_of);
-        let row_of = |path: &PathBuf| entries.iter().position(|entry| &entry.path == path);
+        let old_entries = &self.entries;
+        let new_row = |row: usize| {
+            let path = &old_entries.get(row)?.path;
+            entries.iter().position(|entry| &entry.path == path)
+        };
+        let selection = self.selection.map_rows(new_row);
         // The rows may move, so a press or a band before the change must not act on the rows
         // after it.
         self.forget_presses();
-        self.selection = Selection::new(
-            selected.iter().filter_map(row_of),
-            focus.as_ref().and_then(row_of),
-        );
+        self.selection = selection;
         self.entries = entries;
     }
 
@@ -329,6 +328,19 @@ impl Explorer {
         self.selection.add(row);
     }
 
+    /// Selects the rows from the anchor to the pressed row, and nothing else. The anchor is the
+    /// row last pressed without Shift.
+    pub fn shift_press_row(&mut self, row: usize) {
+        self.on_release = None;
+        self.selection.select_range(row);
+    }
+
+    /// Adds the rows from the anchor to the pressed row to the selection.
+    pub fn ctrl_shift_press_row(&mut self, row: usize) {
+        self.on_release = None;
+        self.selection.add_range(row);
+    }
+
     /// Starts a band at `point` on the empty space of the items. The selection is cleared.
     pub fn start_band(&mut self, point: Point) {
         self.selection = Selection::default();
@@ -353,7 +365,8 @@ impl Explorer {
         };
         band.end = point;
         let under = layout.items_in(band.rect(), self.entries.len());
-        self.selection = Selection::new(band.base.rows().chain(under), band.base.focus());
+        self.selection = band.base.clone();
+        self.selection.extend(under);
     }
 
     /// Ends the band. The items under it stay selected.
@@ -369,13 +382,27 @@ impl Explorer {
     /// Moves the selection with a cursor key. columns is the number of tiles in one row of the
     /// grid.
     pub fn move_selection(&mut self, arrow: Arrow, columns: usize) {
+        if let Some(moved) = self.moved_focus(arrow, columns) {
+            self.selection.select_only(moved);
+        }
+    }
+
+    /// Moves the focus with a cursor key, and selects the rows from the anchor to the new focus.
+    /// columns is the number of tiles in one row of the grid.
+    pub fn extend_selection(&mut self, arrow: Arrow, columns: usize) {
+        if let Some(moved) = self.moved_focus(arrow, columns) {
+            self.selection.select_range(moved);
+        }
+    }
+
+    /// The row that a cursor key moves the focus to. The list ignores left and right.
+    fn moved_focus(&self, arrow: Arrow, columns: usize) -> Option<usize> {
         let columns = match self.view_mode {
-            ViewMode::List if matches!(arrow, Arrow::Left | Arrow::Right) => return,
+            ViewMode::List if matches!(arrow, Arrow::Left | Arrow::Right) => return None,
             ViewMode::List => 1,
             ViewMode::Grid => columns,
         };
-        let moved = move_selection(self.selection.focus(), self.entries.len(), columns, arrow);
-        self.selection = Selection::new(moved, moved);
+        move_selection(self.selection.focus(), self.entries.len(), columns, arrow)
     }
 
     /// Opens the selected item. A folder is shown. For a file, its path is returned, and the
@@ -715,6 +742,21 @@ mod tests {
         assert_eq!(explorer.selected_rows(), [1, 3]);
     }
 
+    // 読み直しても、起点は同じ項目のままである。前に項目が増えても、Shift+クリックの範囲はその項目から始まる。
+    #[test]
+    fn anchor_stays_on_its_item_through_a_refresh() {
+        let folder = files(["b.txt", "c.txt", "d.txt", "e.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(1, Instant::now());
+        explorer.shift_press_row(0);
+        fs::write(folder.path().join("a.txt"), "").unwrap();
+
+        explorer.refresh();
+        explorer.shift_press_row(4);
+
+        assert_eq!(explorer.selected_rows(), [2, 3, 4]);
+    }
+
     // 読み直すと、広げていた矩形は終わる。項目の位置が変わり、矩形の下の項目が変わるためである。
     #[test]
     fn refresh_ends_the_band() {
@@ -934,6 +976,76 @@ mod tests {
         assert_eq!(explorer.selected_rows(), [0, 1]);
 
         explorer.release_row(0);
+        assert_eq!(explorer.selected_rows(), [1]);
+    }
+
+    // Shift+クリックで、最後にShiftなしで押した項目から、押した項目までが選ばれる。続けると、同じ起点から
+    // 範囲が選び直される。
+    #[test]
+    fn shift_press_selects_from_the_last_plain_press() {
+        let folder = files(["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(2, Instant::now());
+
+        explorer.shift_press_row(4);
+        assert_eq!(explorer.selected_rows(), [2, 3, 4]);
+
+        explorer.shift_press_row(0);
+        assert_eq!(explorer.selected_rows(), [0, 1, 2]);
+    }
+
+    // Ctrl+Shift+クリックで、起点から押した項目までが、今の選択に加わる。起点は、最後にCtrlで押した項目である。
+    #[test]
+    fn ctrl_shift_press_adds_the_range_to_the_selection() {
+        let folder = files(["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(2);
+
+        explorer.ctrl_shift_press_row(4);
+
+        assert_eq!(explorer.selected_rows(), [0, 2, 3, 4]);
+    }
+
+    // Shift+矢印キーで、起点から移った項目までが選ばれる。起点は動かない。
+    #[test]
+    fn shift_arrow_selects_from_the_anchor_to_the_item_moved_to() {
+        let folder = files(["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(1, Instant::now());
+
+        explorer.extend_selection(Arrow::Down, 1);
+        explorer.extend_selection(Arrow::Down, 1);
+        assert_eq!(explorer.selected_rows(), [1, 2, 3]);
+
+        explorer.extend_selection(Arrow::Up, 1);
+        explorer.extend_selection(Arrow::Up, 1);
+        explorer.extend_selection(Arrow::Up, 1);
+        assert_eq!(explorer.selected_rows(), [0, 1]);
+    }
+
+    // グリッドでは、Shift+下キーで、起点から真下の項目までが選ばれる。
+    #[test]
+    fn shift_down_in_the_grid_selects_up_to_the_tile_below() {
+        let folder = files(["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"]);
+        let mut explorer = open(&folder);
+        explorer.toggle_view_mode();
+        explorer.press_row(1, Instant::now());
+
+        explorer.extend_selection(Arrow::Down, 2);
+
+        assert_eq!(explorer.selected_rows(), [1, 2, 3]);
+    }
+
+    // 一覧では、Shift+左右キーを押しても、選択は変わらない。
+    #[test]
+    fn shift_left_and_right_in_the_list_keep_the_selection() {
+        let folder = files(["a.txt", "b.txt", "c.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(1, Instant::now());
+
+        explorer.extend_selection(Arrow::Right, 1);
+
         assert_eq!(explorer.selected_rows(), [1]);
     }
 

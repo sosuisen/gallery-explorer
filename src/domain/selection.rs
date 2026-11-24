@@ -3,19 +3,28 @@ use std::collections::BTreeSet;
 /// The selected items, by row.
 ///
 /// The focus is the row that the cursor keys move from, and the row that Enter opens.
+/// The anchor is the row that a range starts from. It is the row last selected without Shift.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Selection {
     rows: BTreeSet<usize>,
     focus: Option<usize>,
+    anchor: Option<usize>,
 }
 
 impl Selection {
-    /// Selects `rows`, with the focus on `focus`.
-    pub fn new(rows: impl IntoIterator<Item = usize>, focus: Option<usize>) -> Self {
+    /// The same selection after the rows moved. `new_row` gives the new row of an old one, or
+    /// None when the row is gone. A gone row leaves the selection.
+    pub fn map_rows(&self, new_row: impl Fn(usize) -> Option<usize>) -> Self {
         Self {
-            rows: rows.into_iter().collect(),
-            focus,
+            rows: self.rows().filter_map(&new_row).collect(),
+            focus: self.focus.and_then(&new_row),
+            anchor: self.anchor.and_then(&new_row),
         }
+    }
+
+    /// Adds `rows` to the selection. The focus and the anchor stay.
+    pub fn extend(&mut self, rows: impl IntoIterator<Item = usize>) {
+        self.rows.extend(rows);
     }
 
     /// The selected rows, in ascending order.
@@ -31,11 +40,28 @@ impl Selection {
     pub fn select_only(&mut self, row: usize) {
         self.rows = BTreeSet::from([row]);
         self.focus = Some(row);
+        self.anchor = Some(row);
     }
 
-    /// Adds `row` to the selection and moves the focus to it.
+    /// Adds `row` to the selection and moves the focus and the anchor to it.
     pub fn add(&mut self, row: usize) {
         self.rows.insert(row);
+        self.focus = Some(row);
+        self.anchor = Some(row);
+    }
+
+    /// Selects the rows from the anchor to `row`, and nothing else. The focus moves to `row`, and
+    /// the anchor stays. Without an anchor, `row` becomes the anchor.
+    pub fn select_range(&mut self, row: usize) {
+        self.rows.clear();
+        self.add_range(row);
+    }
+
+    /// Adds the rows from the anchor to `row` to the selection. The focus moves to `row`, and the
+    /// anchor stays. Without an anchor, `row` becomes the anchor.
+    pub fn add_range(&mut self, row: usize) {
+        let anchor = *self.anchor.get_or_insert(row);
+        self.rows.extend(anchor.min(row)..=anchor.max(row));
         self.focus = Some(row);
     }
 
@@ -105,6 +131,46 @@ mod tests {
 
         assert_eq!(rows(&selection), [3]);
         assert_eq!(selection.focus(), Some(3));
+    }
+
+    // 範囲を選ぶと、起点から指定の行までが選ばれ、前の選択は消える。起点は変わらない。
+    #[test]
+    fn selecting_a_range_selects_from_the_anchor_to_the_row() {
+        let mut selection = Selection::default();
+        selection.select_only(2);
+
+        selection.select_range(4);
+        assert_eq!(rows(&selection), [2, 3, 4]);
+        assert_eq!(selection.focus(), Some(4));
+
+        selection.select_range(0);
+        assert_eq!(rows(&selection), [0, 1, 2]);
+        assert_eq!(selection.focus(), Some(0));
+    }
+
+    // 起点がないときに範囲を選ぶと、指定の行だけが選ばれ、そこが起点になる。
+    #[test]
+    fn range_without_an_anchor_selects_the_row_and_anchors_there() {
+        let mut selection = Selection::default();
+
+        selection.select_range(2);
+        assert_eq!(rows(&selection), [2]);
+
+        selection.select_range(4);
+        assert_eq!(rows(&selection), [2, 3, 4]);
+    }
+
+    // 範囲を加えると、起点から指定の行までが、前の選択に足される。
+    #[test]
+    fn adding_a_range_keeps_the_earlier_selection() {
+        let mut selection = Selection::default();
+        selection.select_only(0);
+        selection.add(4);
+
+        selection.add_range(6);
+
+        assert_eq!(rows(&selection), [0, 4, 5, 6]);
+        assert_eq!(selection.focus(), Some(6));
     }
 
     // 加えると、前の選択に足される。
