@@ -140,6 +140,7 @@ Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほ
 
 1. 一覧の行とグリッドのタイルの`Border`は、右ボタンの押下で`Message::ShowItemMenu(パス, フォルダか)`を送る。
    お気に入りの行とツリーの行は、`folder_menu_handler`で`Message::ShowFolderMenu(パス)`を送る。
+   一覧とグリッドの項目のない場所は、`background_menu_handler`で、今のフォルダの`Message::ShowFolderMenu`を送る。
 2. `update`が`popup_menu`を呼ぶ。`popup_menu`は、マウスカーソルの位置にWin32のメニューを出し、選ばれた項目の番号を返す。
    メニューが閉じるまで、`TrackPopupMenu`の中でメッセージループが回る。
 3. 「エクスプローラーで開く」が選ばれると、`show_in_explorer`がエクスプローラーで開く。
@@ -151,6 +152,12 @@ Tabは、`PostMessageW`でこのアプリのウィンドウに送るので、ほ
 `Button`には、押下のイベントがないためである。
 お気に入りの行の名前の`Border`には、透明な背景を付ける。
 背景のない`Border`は、押下を受け取らないためである。
+
+一覧とグリッドの項目のない場所の右クリックは、`ScrollViewer`を包む透明な背景の`Border`で受け取る。
+項目の上の右クリックも、WinUIが親へ伝えるので、項目の`Border`のあとに、この`Border`に届く。
+そこで、項目の`press_handler`は`ITEM_MENU_ASKED`を立てる。
+`background_menu_handler`は、`ITEM_MENU_ASKED`が立っていればそれを下ろし、メニューを出さない。
+`windows-reactor`は、届いた順にイベントを呼ぶので、項目のハンドラーが先に呼ばれる。
 
 ### 表示順
 

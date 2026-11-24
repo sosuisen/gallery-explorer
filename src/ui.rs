@@ -465,10 +465,14 @@ impl ExplorerWindow {
                 .keyed_children(items),
         };
 
-        ScrollViewer::new()
+        // The border takes the right presses on the empty space around the items.
+        Border::new()
             .grid_row(1)
             .grid_column(1)
-            .content(panel)
+            // A border without a background receives no pointer events.
+            .background(Color::transparent())
+            .on_pointer_pressed(background_menu_handler(self.explorer.current(), context))
+            .content(ScrollViewer::new().content(panel))
     }
 
     fn status_bar(&self) -> View {
@@ -814,7 +818,26 @@ fn press_handler(
         if pointer.is_left_button_pressed {
             sender.send(Message::RowPressed(row, Instant::now()));
         } else if pointer.is_right_button_pressed {
+            ITEM_MENU_ASKED.set(true);
             sender.send(Message::ShowItemMenu(path.clone(), is_folder));
+        }
+    }
+}
+
+/// A right press on the empty space of the list or the grid asks for the context menu of the
+/// current folder.
+///
+/// A press on an item also reaches this handler, after the item's handler, because WinUI passes
+/// the press on to the parents. The item's handler marks the press, and this handler ignores it.
+fn background_menu_handler(
+    folder: &Path,
+    context: &ViewContext<ExplorerWindow>,
+) -> impl Fn(PointerEventInfo) + use<> {
+    let sender = context.sender();
+    let folder = folder.to_path_buf();
+    move |pointer: PointerEventInfo| {
+        if pointer.is_right_button_pressed && !ITEM_MENU_ASKED.replace(false) {
+            sender.send(Message::ShowFolderMenu(folder.clone()));
         }
     }
 }
@@ -872,6 +895,9 @@ fn popup_menu(items: &[&str]) -> Option<usize> {
 }
 
 thread_local! {
+    /// Whether the right press that is being handled was on an item. See
+    /// `background_menu_handler`.
+    static ITEM_MENU_ASKED: Cell<bool> = const { Cell::new(false) };
     /// Where the key hook sends the keys. The hook runs on the UI thread, as the window does.
     static KEY_SENDER: RefCell<Option<LocalSender<Message>>> = const { RefCell::new(None) };
     /// The window that WinUI reads the keys from. It is the window of the last key.
