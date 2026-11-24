@@ -45,10 +45,17 @@ impl Selection {
     }
 
     /// Selects the rows from the anchor to `row`, and nothing else. The focus moves to `row`, and
-    /// the anchor stays.
+    /// the anchor stays. Without an anchor, `row` becomes the anchor.
     pub fn select_range(&mut self, row: usize) {
-        let anchor = self.anchor.unwrap_or(row);
-        self.rows = (anchor.min(row)..=anchor.max(row)).collect();
+        self.rows.clear();
+        self.add_range(row);
+    }
+
+    /// Adds the rows from the anchor to `row` to the selection. The focus moves to `row`, and the
+    /// anchor stays. Without an anchor, `row` becomes the anchor.
+    pub fn add_range(&mut self, row: usize) {
+        let anchor = *self.anchor.get_or_insert(row);
+        self.rows.extend(anchor.min(row)..=anchor.max(row));
         self.focus = Some(row);
     }
 
