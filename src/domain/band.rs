@@ -149,7 +149,7 @@ mod tests {
         let in_margin = Rect::between(Point::new(0.0, 0.0), Point::new(4.0, 50.0));
         let below = Rect::between(Point::new(0.0, 44.0), Point::new(50.0, 60.0));
 
-        assert_eq!(layout.items_in(in_margin, 6), []);
-        assert_eq!(layout.items_in(below, 6), []);
+        assert_eq!(layout.items_in(in_margin, 6), Vec::<usize>::new());
+        assert_eq!(layout.items_in(below, 6), Vec::<usize>::new());
     }
 }
