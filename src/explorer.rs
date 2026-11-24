@@ -848,6 +848,34 @@ mod tests {
         );
     }
 
+    // Ctrlを押して矩形を広げると、矩形の下の項目が前の選択に加わる。矩形を縮めると、加えた項目は外れる。
+    #[test]
+    fn ctrl_band_adds_to_the_earlier_selection() {
+        let folder = files(["a.txt", "b.txt", "c.txt", "d.txt"]);
+        let mut explorer = open(&folder);
+        let rows_of_ten = ItemLayout::list(0.0, 10.0);
+        explorer.press_row(3, Instant::now());
+
+        explorer.ctrl_start_band(Point::new(5.0, 5.0));
+        explorer.move_band(Point::new(50.0, 15.0), rows_of_ten);
+        assert_eq!(explorer.selected_rows(), [0, 1, 3]);
+
+        explorer.move_band(Point::new(50.0, 8.0), rows_of_ten);
+        assert_eq!(explorer.selected_rows(), [0, 3]);
+    }
+
+    // Ctrlなしで空いた場所を押すと、選択が消える。
+    #[test]
+    fn plain_band_start_clears_the_selection() {
+        let folder = files(["a.txt", "b.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(1, Instant::now());
+
+        explorer.start_band(Point::new(5.0, 500.0));
+
+        assert_eq!(explorer.selected_rows(), Vec::<usize>::new());
+    }
+
     // 一覧では、グリッドの列の数によらず、下キーで次の行が選ばれる。
     #[test]
     fn down_in_the_list_selects_the_next_row() {
