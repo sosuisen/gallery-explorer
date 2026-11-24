@@ -391,6 +391,21 @@ impl Explorer {
         self.selection = Selection::new(moved, moved);
     }
 
+    /// Moves the focus with a cursor key, and selects the rows from the anchor to the new focus.
+    /// columns is the number of tiles in one row of the grid.
+    pub fn extend_selection(&mut self, arrow: Arrow, columns: usize) {
+        let columns = match self.view_mode {
+            ViewMode::List if matches!(arrow, Arrow::Left | Arrow::Right) => return,
+            ViewMode::List => 1,
+            ViewMode::Grid => columns,
+        };
+        if let Some(moved) =
+            move_selection(self.selection.focus(), self.entries.len(), columns, arrow)
+        {
+            self.selection.select_range(moved);
+        }
+    }
+
     /// Opens the selected item. A folder is shown. For a file, its path is returned, and the
     /// caller opens it.
     pub fn open_selected(&mut self) -> Option<PathBuf> {
