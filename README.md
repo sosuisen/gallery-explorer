@@ -29,6 +29,7 @@ crates.io. The copy adds dragging files to other apps. The changes are listed in
 - A sort menu: by name or by modified time, each in ascending or descending order. Folders
   always come before files.
 - A right-click menu opens an item in File Explorer. A file is shown selected in its folder.
+  The menu of an item in the list or the grid can also move it to the Recycle Bin.
 - Drag a file or a folder from the list or the grid to File Explorer or to another app. The
   keys that pick copy, move or a shortcut are the same as in File Explorer.
 - Live updates: files that are added to or removed from the open folder show up at once.
@@ -91,7 +92,8 @@ These files are left out of both. No ordinary test can run them.
 
 - `src/main.rs`: the entry point, which starts the WinUI app.
 - `src/ui.rs`: the window, which builds WinUI controls and handles their events.
-- `src/infra/shell.rs`: the calls that open a file with its default app, and show an item in File Explorer.
+- `src/infra/shell.rs`: the calls that open a file with its default app, show an item in File Explorer,
+  and move an item to the Recycle Bin.
 - `src/infra/shell_thumbnail.rs`: the calls that ask the Windows shell for a thumbnail.
   The result depends on the thumbnail handlers installed on the machine.
 - `src/infra/app_icon.rs`: the calls that give the window the icon in the exe.

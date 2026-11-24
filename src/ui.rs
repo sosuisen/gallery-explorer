@@ -13,7 +13,7 @@ use crate::domain::{Arrow, Entry, SortOrder, TreeRow, crumbs, display_name};
 use crate::explorer::{Explorer, ViewMode};
 use crate::infra::{
     Changes, FavoritesStore, FolderWatcher, collect_thumbnails, drives, folder_covers, image_uri,
-    open_with_default_app, shell_thumbnail, show_app_icon, show_in_explorer,
+    move_to_recycle_bin, open_with_default_app, shell_thumbnail, show_app_icon, show_in_explorer,
 };
 
 const SIDE_WIDTH: f64 = 300.0;
@@ -56,8 +56,11 @@ pub enum Message {
     ToggleTree(PathBuf),
     OpenTreeFolder(PathBuf),
     RowPressed(usize, Instant),
-    /// A right press on an item. It holds the path and whether it is a folder.
-    ShowMenu(PathBuf, bool),
+    /// A right press on a favorite or a tree row. It holds the path of the folder.
+    ShowFolderMenu(PathBuf),
+    /// A right press on an item in the list or the grid. It holds the path and whether it is a
+    /// folder.
+    ShowItemMenu(PathBuf, bool),
     ToggleFavorite,
     RemoveFavorite(PathBuf),
     /// The selection of the favorites changed. It holds the chosen row.
@@ -207,11 +210,24 @@ impl ExplorerWindow {
                 }
             }
             Message::WindowResized(width) => self.columns = grid_columns(width),
-            Message::ShowMenu(path, is_folder) => {
-                if popup_menu(&["エクスプローラーで開く"]) == Some(0)
-                    && let Err(error) = show_in_explorer(&path, is_folder)
-                {
-                    explorer.report_error(format!("{}を開けません: {error}", path.display()));
+            Message::ShowFolderMenu(path) => {
+                if popup_menu(&[OPEN_IN_EXPLORER]) == Some(0) {
+                    open_in_explorer(explorer, &path, true);
+                }
+            }
+            Message::ShowItemMenu(path, is_folder) => {
+                match popup_menu(&[OPEN_IN_EXPLORER, DELETE]) {
+                    Some(0) => open_in_explorer(explorer, &path, is_folder),
+                    Some(1) => {
+                        // The folder watch removes the item from the list.
+                        if let Err(error) = move_to_recycle_bin(&path) {
+                            explorer.report_error(format!(
+                                "{}を削除できません: {error}",
+                                path.display()
+                            ));
+                        }
+                    }
+                    _ => {}
                 }
             }
             Message::ToggleFavorite => explorer.toggle_favorite(),
@@ -449,10 +465,14 @@ impl ExplorerWindow {
                 .keyed_children(items),
         };
 
-        ScrollViewer::new()
+        // The border takes the right presses on the empty space around the items.
+        Border::new()
             .grid_row(1)
             .grid_column(1)
-            .content(panel)
+            // A border without a background receives no pointer events.
+            .background(Color::transparent())
+            .on_pointer_pressed(background_menu_handler(self.explorer.current(), context))
+            .content(ScrollViewer::new().content(panel))
     }
 
     fn status_bar(&self) -> View {
@@ -539,6 +559,16 @@ fn tree_row(row: &TreeRow, context: &ViewContext<ExplorerWindow>) -> View {
     Border::new()
         .on_pointer_pressed(folder_menu_handler(&row.path, context))
         .content(row_view)
+}
+
+/// The items of the context menus.
+const OPEN_IN_EXPLORER: &str = "エクスプローラーで開く";
+const DELETE: &str = "削除";
+
+fn open_in_explorer(explorer: &mut Explorer, path: &Path, is_folder: bool) {
+    if let Err(error) = show_in_explorer(path, is_folder) {
+        explorer.report_error(format!("{}を開けません: {error}", path.display()));
+    }
 }
 
 fn open_file(explorer: &mut Explorer, file: &Path) {
@@ -788,7 +818,26 @@ fn press_handler(
         if pointer.is_left_button_pressed {
             sender.send(Message::RowPressed(row, Instant::now()));
         } else if pointer.is_right_button_pressed {
-            sender.send(Message::ShowMenu(path.clone(), is_folder));
+            ITEM_MENU_ASKED.set(true);
+            sender.send(Message::ShowItemMenu(path.clone(), is_folder));
+        }
+    }
+}
+
+/// A right press on the empty space of the list or the grid asks for the context menu of the
+/// current folder.
+///
+/// A press on an item also reaches this handler, after the item's handler, because WinUI passes
+/// the press on to the parents. The item's handler marks the press, and this handler ignores it.
+fn background_menu_handler(
+    folder: &Path,
+    context: &ViewContext<ExplorerWindow>,
+) -> impl Fn(PointerEventInfo) + use<> {
+    let sender = context.sender();
+    let folder = folder.to_path_buf();
+    move |pointer: PointerEventInfo| {
+        if pointer.is_right_button_pressed && !ITEM_MENU_ASKED.replace(false) {
+            sender.send(Message::ShowFolderMenu(folder.clone()));
         }
     }
 }
@@ -802,7 +851,7 @@ fn folder_menu_handler(
     let path = path.to_path_buf();
     move |pointer: PointerEventInfo| {
         if pointer.is_right_button_pressed {
-            sender.send(Message::ShowMenu(path.clone(), true));
+            sender.send(Message::ShowFolderMenu(path.clone()));
         }
     }
 }
@@ -846,6 +895,9 @@ fn popup_menu(items: &[&str]) -> Option<usize> {
 }
 
 thread_local! {
+    /// Whether the right press that is being handled was on an item. See
+    /// `background_menu_handler`.
+    static ITEM_MENU_ASKED: Cell<bool> = const { Cell::new(false) };
     /// Where the key hook sends the keys. The hook runs on the UI thread, as the window does.
     static KEY_SENDER: RefCell<Option<LocalSender<Message>>> = const { RefCell::new(None) };
     /// The window that WinUI reads the keys from. It is the window of the last key.
