@@ -34,6 +34,33 @@ impl Rect {
     }
 }
 
+/// Where the items lie in their area.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ItemLayout {
+    margin: f64,
+    item_height: f64,
+}
+
+impl ItemLayout {
+    /// Rows of `row_height` below each other, as wide as the area, inside `margin`.
+    pub fn list(margin: f64, row_height: f64) -> Self {
+        Self {
+            margin,
+            item_height: row_height,
+        }
+    }
+
+    /// The items among the first `count` items that overlap `rect`.
+    pub fn items_in(&self, rect: Rect, count: usize) -> Vec<usize> {
+        (0..count)
+            .filter(|&item| {
+                let top = self.margin + self.item_height * item as f64;
+                top < rect.bottom && top + self.item_height > rect.top
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
