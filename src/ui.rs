@@ -63,8 +63,8 @@ pub enum Message {
     CrumbClicked(String),
     ToggleTree(PathBuf),
     OpenTreeFolder(PathBuf),
-    /// A left press on an item. It holds the row, the time, and whether Ctrl was down.
-    RowPressed(usize, Instant, bool),
+    /// A left press on an item. It holds the row, the time, and the keys held down.
+    RowPressed(usize, Instant, Modifiers),
     /// The left button went up over an item. It holds the row.
     RowReleased(usize),
     /// A left press on the empty space of the items. It holds the point in the items area, and
@@ -102,10 +102,39 @@ pub enum Message {
     WindowResized(f64),
 }
 
+/// The keys held down with a press.
+#[derive(Clone, Copy)]
+pub struct Modifiers {
+    ctrl: bool,
+    shift: bool,
+}
+
+impl Modifiers {
+    /// The keys held down now. The pointer events of windows-reactor do not tell.
+    fn now() -> Self {
+        use windows::Win32::UI::Input::KeyboardAndMouse::{VK_CONTROL, VK_SHIFT};
+
+        Self {
+            ctrl: is_down(VK_CONTROL),
+            shift: is_down(VK_SHIFT),
+        }
+    }
+}
+
+/// Whether a key is down, as of the message being handled.
+fn is_down(key: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY) -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState;
+
+    // The high bit, and so a negative value, means the key is down.
+    unsafe { GetKeyState(i32::from(key.0)) < 0 }
+}
+
 /// A key that works on the items of the current folder.
 #[derive(Clone, Copy)]
 pub enum Key {
     Arrow(Arrow),
+    /// A cursor key with Shift, which selects a range.
+    ShiftArrow(Arrow),
     Enter,
     /// Backspace, which goes up to the parent folder.
     Back,
@@ -121,7 +150,7 @@ pub struct ExplorerWindow {
     /// The number of tiles in one row of the grid. It follows the width of the window.
     columns: usize,
     /// The first hidden button in the selected item. See `with_scroll_buttons`.
-    focus_anchor: ElementRef<Button>,
+    scroll_buttons: ScrollButtons,
     /// Counts the moves of the selection by key. Each new count focuses the selected item.
     key_moves: u64,
 }
@@ -150,7 +179,7 @@ impl Component for ExplorerWindow {
             covers_task: None,
             thumbnails_task: None,
             columns: 1,
-            focus_anchor: ElementRef::new(),
+            scroll_buttons: ScrollButtons::default(),
             key_moves: 0,
         };
         window.watch_current_folder(context);
@@ -183,9 +212,9 @@ impl Component for ExplorerWindow {
         });
         // The effect runs after the new view is published, so the anchor is already in the
         // newly selected item.
-        let anchor = self.focus_anchor.clone();
+        let buttons = self.scroll_buttons.clone();
         context.use_effect("scroll-to-selected", self.key_moves, move || {
-            let _ = anchor.request_focus_result(|focused| {
+            let _ = buttons.start().request_focus_result(|focused| {
                 if focused == Ok(true) {
                     press_tab_soon();
                 }
@@ -212,12 +241,16 @@ impl ExplorerWindow {
             Message::CrumbClicked(label) => explorer.crumb_clicked(&label),
             Message::ToggleTree(path) => explorer.toggle_tree(&path),
             Message::OpenTreeFolder(path) => explorer.open_tree_folder(&path),
-            Message::RowPressed(row, _, true) => explorer.ctrl_press_row(row),
-            Message::RowPressed(row, at, false) => {
-                if let Some(file) = explorer.press_row(row, at) {
-                    open_file(explorer, &file);
+            Message::RowPressed(row, at, keys) => match (keys.ctrl, keys.shift) {
+                (false, false) => {
+                    if let Some(file) = explorer.press_row(row, at) {
+                        open_file(explorer, &file);
+                    }
                 }
-            }
+                (true, false) => explorer.ctrl_press_row(row),
+                (false, true) => explorer.shift_press_row(row),
+                (true, true) => explorer.ctrl_shift_press_row(row),
+            },
             Message::RowReleased(row) => explorer.release_row(row),
             Message::BandStarted(point, true) => explorer.ctrl_start_band(point),
             Message::BandStarted(point, false) => explorer.start_band(point),
@@ -228,6 +261,10 @@ impl ExplorerWindow {
             Message::BandEnded => explorer.end_band(),
             Message::KeyPressed(Key::Arrow(arrow)) => {
                 explorer.move_selection(arrow, self.columns);
+                self.key_moves += 1;
+            }
+            Message::KeyPressed(Key::ShiftArrow(arrow)) => {
+                explorer.extend_selection(arrow, self.columns);
                 self.key_moves += 1;
             }
             Message::KeyPressed(Key::Enter) => {
@@ -483,7 +520,7 @@ impl ExplorerWindow {
                 ViewMode::List => file_row(item, source, context),
                 ViewMode::Grid => file_tile(item, source, context),
             };
-            let anchor = (focus == Some(row)).then_some(&self.focus_anchor);
+            let anchor = (focus == Some(row)).then_some(&self.scroll_buttons);
             (entry.name.clone(), with_scroll_buttons(view, anchor))
         });
         let panel: View = match mode {
@@ -652,26 +689,47 @@ fn grid_columns(width: f64) -> usize {
 /// item into view.
 ///
 /// windows-reactor 0.100.0 cannot scroll a ScrollViewer. WinUI scrolls an element into view only
-/// when it gets keyboard focus, not when the app focuses it. So the view focuses the first
-/// button, the anchor, and then presses Tab. Tab moves keyboard focus to the second button, and
-/// WinUI scrolls the item into view.
+/// when it gets keyboard focus, not when the app focuses it. So the view focuses one button and
+/// then presses Tab. Tab moves keyboard focus to the other button, and WinUI scrolls the item
+/// into view.
 ///
-/// Both buttons are in the same item. A posted key cannot hold Shift, so focus can only move
-/// forward. The buttons are 1px wide and transparent, so they hardly take any clicks from the
-/// item.
+/// Both buttons are in the same item, so Tab cannot leave the item. The posted Tab cannot release
+/// a Shift key that the user holds, so it may arrive as Shift+Tab. See `ScrollButtons::start`.
+/// The buttons are 1px wide and transparent, so they hardly take any clicks from the item.
 ///
 /// Every item is in the grid, and only the selected one has the buttons. A press selects the
 /// item. If only the selected item were in a grid, the press would replace the item's control
 /// with a new one, and the drag of the item could not start.
-fn with_scroll_buttons(item: View, anchor: Option<&ElementRef<Button>>) -> View {
-    let (first, second): (View, View) = match anchor {
-        Some(anchor) => (
-            scroll_button().element_ref(anchor).into(),
-            scroll_button().into(),
+fn with_scroll_buttons(item: View, buttons: Option<&ScrollButtons>) -> View {
+    let (first, second): (View, View) = match buttons {
+        Some(buttons) => (
+            scroll_button().element_ref(&buttons.first).into(),
+            scroll_button().element_ref(&buttons.second).into(),
         ),
         None => (View::empty(), View::empty()),
     };
     Grid::new().children((item, first, second))
+}
+
+/// The two hidden buttons in the focused item. See `with_scroll_buttons`.
+#[derive(Clone, Default)]
+struct ScrollButtons {
+    first: ElementRef<Button>,
+    second: ElementRef<Button>,
+}
+
+impl ScrollButtons {
+    /// The button to focus before the Tab. A held Shift turns the Tab into Shift+Tab, which moves
+    /// focus backward. So with Shift, the Tab starts from the second button.
+    fn start(&self) -> &ElementRef<Button> {
+        use windows::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT;
+
+        if is_down(VK_SHIFT) {
+            &self.second
+        } else {
+            &self.first
+        }
+    }
 }
 
 fn scroll_button() -> Button {
@@ -894,7 +952,7 @@ fn press_handler(
     move |pointer: PointerEventInfo| {
         ITEM_PRESSED.set(true);
         if pointer.is_left_button_pressed {
-            sender.send(Message::RowPressed(row, Instant::now(), ctrl_is_down()));
+            sender.send(Message::RowPressed(row, Instant::now(), Modifiers::now()));
         } else if pointer.is_right_button_pressed {
             sender.send(Message::ShowItemMenu(path.clone(), is_folder));
         }
@@ -931,7 +989,7 @@ fn background_press_handler(
         if pointer.is_left_button_pressed {
             BANDING.set(true);
             let point = Point::new(pointer.x, pointer.y);
-            sender.send(Message::BandStarted(point, ctrl_is_down()));
+            sender.send(Message::BandStarted(point, Modifiers::now().ctrl));
         } else if pointer.is_right_button_pressed {
             sender.send(Message::ShowMenu(folder.clone()));
         }
@@ -984,14 +1042,6 @@ fn band_view(band: Option<Rect>) -> View {
         .border_brush(Brush::Theme(ThemeBrush::Accent))
         .border_thickness(1.0)
         .into()
-}
-
-/// Whether a Ctrl key is down now. The pointer events of windows-reactor do not tell.
-fn ctrl_is_down() -> bool {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL};
-
-    // The high bit, and so a negative value, means the key is down.
-    unsafe { GetKeyState(i32::from(VK_CONTROL.0)) < 0 }
 }
 
 /// A right press on a favorite or a tree row asks for the context menu of its file or folder.
@@ -1142,17 +1192,23 @@ unsafe extern "system" fn key_hook(
 
 fn key_of(virtual_key: usize) -> Option<Key> {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        VK_BACK, VK_DOWN, VK_LEFT, VK_RETURN, VK_RIGHT, VK_UP,
+        VK_BACK, VK_DOWN, VK_LEFT, VK_RETURN, VK_RIGHT, VK_SHIFT, VK_UP,
     };
 
     let key = u16::try_from(virtual_key).ok()?;
-    Some(match key {
-        _ if key == VK_UP.0 => Key::Arrow(Arrow::Up),
-        _ if key == VK_DOWN.0 => Key::Arrow(Arrow::Down),
-        _ if key == VK_LEFT.0 => Key::Arrow(Arrow::Left),
-        _ if key == VK_RIGHT.0 => Key::Arrow(Arrow::Right),
-        _ if key == VK_RETURN.0 => Key::Enter,
-        _ if key == VK_BACK.0 => Key::Back,
+    let arrow = match key {
+        _ if key == VK_UP.0 => Arrow::Up,
+        _ if key == VK_DOWN.0 => Arrow::Down,
+        _ if key == VK_LEFT.0 => Arrow::Left,
+        _ if key == VK_RIGHT.0 => Arrow::Right,
+        _ if key == VK_RETURN.0 => return Some(Key::Enter),
+        _ if key == VK_BACK.0 => return Some(Key::Back),
         _ => return None,
+    };
+    // The hook sees the key before WinUI, but after the Shift key that came before it.
+    Some(if is_down(VK_SHIFT) {
+        Key::ShiftArrow(arrow)
+    } else {
+        Key::Arrow(arrow)
     })
 }
