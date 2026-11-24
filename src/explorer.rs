@@ -296,14 +296,19 @@ impl Explorer {
         self.save_favorites();
     }
 
-    /// Moves to the favorite in `row` of the list of favorites.
-    /// Favorites hold pictures to look at, so they open in the grid, newest first.
-    pub fn open_favorite(&mut self, row: usize) {
+    /// Opens the favorite in `row` of the list of favorites. A folder is shown. For a file, its
+    /// path is returned, and the caller opens it.
+    /// Favorite folders hold pictures to look at, so they open in the grid, newest first.
+    pub fn open_favorite(&mut self, row: usize) -> Option<PathBuf> {
         let path = self.favorites.paths()[row].clone();
+        if !path.is_dir() {
+            return Some(path);
+        }
         // Set before moving, so the new folder is read in this order.
         self.sort_order = SortOrder::ModifiedDescending;
         self.navigate(&path);
         self.view_mode = ViewMode::Grid;
+        None
     }
 
     /// Puts the favorites in the order the user dragged them into, and saves it.

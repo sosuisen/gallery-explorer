@@ -237,7 +237,10 @@ impl ExplorerWindow {
             Message::RemoveFavorite(path) => explorer.remove_favorite(&path),
             // The view clears the selection again, so the same favorite can be chosen twice.
             Message::FavoriteChosen(Some(row)) => {
-                explorer.open_favorite(row);
+                if let Some(file) = explorer.open_favorite(row) {
+                    open_file(explorer, &file);
+                    return;
+                }
                 // The favorite may be the current folder. Moving there clears the covers, but
                 // no folder change loads them again, nor the thumbnails that the grid now needs.
                 self.load_previews(context);
