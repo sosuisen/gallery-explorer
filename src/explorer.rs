@@ -937,6 +937,34 @@ mod tests {
         assert_eq!(explorer.selected_rows(), [1]);
     }
 
+    // Shift+クリックで、最後にShiftなしで押した項目から、押した項目までが選ばれる。続けると、同じ起点から
+    // 範囲が選び直される。
+    #[test]
+    fn shift_press_selects_from_the_last_plain_press() {
+        let folder = files(["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(2, Instant::now());
+
+        explorer.shift_press_row(4);
+        assert_eq!(explorer.selected_rows(), [2, 3, 4]);
+
+        explorer.shift_press_row(0);
+        assert_eq!(explorer.selected_rows(), [0, 1, 2]);
+    }
+
+    // Ctrl+Shift+クリックで、起点から押した項目までが、今の選択に加わる。起点は、最後にCtrlで押した項目である。
+    #[test]
+    fn ctrl_shift_press_adds_the_range_to_the_selection() {
+        let folder = files(["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"]);
+        let mut explorer = open(&folder);
+        explorer.press_row(0, Instant::now());
+        explorer.ctrl_press_row(2);
+
+        explorer.ctrl_shift_press_row(4);
+
+        assert_eq!(explorer.selected_rows(), [0, 2, 3, 4]);
+    }
+
     // 複数を選んでいても、矢印キーを押すと、移った項目だけが選ばれる。
     #[test]
     fn arrow_selects_only_the_item_moved_to() {
