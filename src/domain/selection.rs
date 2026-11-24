@@ -40,6 +40,22 @@ pub fn move_selection(
 mod tests {
     use super::*;
 
+    fn rows(selection: &Selection) -> Vec<usize> {
+        selection.rows().collect()
+    }
+
+    // 1つだけ選ぶと、前の選択は消える。
+    #[test]
+    fn selecting_only_one_item_drops_the_earlier_selection() {
+        let mut selection = Selection::default();
+        selection.select_only(1);
+
+        selection.select_only(3);
+
+        assert_eq!(rows(&selection), [3]);
+        assert_eq!(selection.focus(), Some(3));
+    }
+
     // 何も選ばれていないときに矢印キーを押すと、最初の項目が選ばれる。
     #[test]
     fn arrow_without_a_selection_selects_the_first_item() {
