@@ -919,6 +919,30 @@ mod tests {
         assert_eq!(explorer.current(), photos);
     }
 
+    // お気に入りのファイルを開いても、表示の方法と表示順は変わらない。
+    #[test]
+    fn opening_a_favorite_file_keeps_the_view_and_the_order() {
+        let folder = sample();
+        let note = folder.path().join("note.txt");
+        let mut explorer = open(&folder);
+        explorer.toggle_favorite(&note);
+
+        explorer.open_favorite(0);
+
+        assert_eq!(explorer.view_mode(), ViewMode::List);
+        assert_eq!(explorer.sort_order(), SortOrder::NameAscending);
+    }
+
+    // お気に入りのフォルダを開くと、パスは返らない。
+    #[test]
+    fn opening_a_favorite_folder_returns_nothing() {
+        let folder = sample();
+        let mut explorer = open(&folder);
+        explorer.toggle_favorite(folder.path());
+
+        assert_eq!(explorer.open_favorite(0), None);
+    }
+
     // お気に入りから開くと、一覧で見ていてもグリッドで表示される。
     #[test]
     fn opening_a_favorite_shows_the_grid() {
